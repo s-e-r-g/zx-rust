@@ -1,0 +1,10 @@
+[package]
+name = "zx-spectrum-emulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.27"     # GUI фреймворк на базі egui
+egui = "0.27"
+log = "0.4"
+env_logger = "0.10"
