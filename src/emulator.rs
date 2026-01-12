@@ -676,15 +676,29 @@ impl Emulator {
                         if q == 0 { // SBC HL, rp
                             let res = hl.wrapping_sub(rp).wrapping_sub(cy);
                             self.set_rp(2, res, 0);
-                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) | F_N |
-                                     (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 }) |
-                                     (if (hl as u32) < (rp as u32 + cy as u32) { F_C } else { 0 });
+                            
+                            let h_flag = (hl & 0xFFF) < (rp & 0xFFF) + cy;
+                            let overflow = ((hl ^ rp) & (hl ^ res) & 0x8000) != 0;
+
+                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S | F_PV)) | F_N |
+                                     (if res == 0 { F_Z } else { 0 }) | 
+                                     (if res & 0x8000 != 0 { F_S } else { 0 }) |
+                                     (if (hl as u32) < (rp as u32 + cy as u32) { F_C } else { 0 }) |
+                                     (if h_flag { F_H } else { 0 }) |
+                                     (if overflow { F_PV } else { 0 });
                         } else { // ADC HL, rp
                             let res = hl.wrapping_add(rp).wrapping_add(cy);
                             self.set_rp(2, res, 0);
-                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) |
-                                     (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 }) |
-                                     (if (hl as u32 + rp as u32 + cy as u32) > 0xFFFF { F_C } else { 0 });
+
+                            let h_flag = (hl & 0xFFF) + (rp & 0xFFF) + cy > 0xFFF;
+                            let overflow = ((hl ^ res) & (rp ^ res) & 0x8000) != 0;
+
+                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S | F_PV)) |
+                                     (if res == 0 { F_Z } else { 0 }) | 
+                                     (if res & 0x8000 != 0 { F_S } else { 0 }) |
+                                     (if (hl as u32 + rp as u32 + cy as u32) > 0xFFFF { F_C } else { 0 }) |
+                                     (if h_flag { F_H } else { 0 }) |
+                                     (if overflow { F_PV } else { 0 });
                         }
                     },
                     3 => { // LD (nn), rp / LD rp, (nn)
@@ -1126,5 +1140,375 @@ mod tests {
         assert_eq!(emu.a, 0x55);
         assert_ne!(emu.f & F_H, 0);
         assert_ne!(emu.f & F_N, 0);
+    }
+
+    #[test]
+    fn test_16bit_arithmetic() {
+        let mut emu = Emulator::new();
+        
+        // ADD HL, BC
+        emu.h = 0x10; emu.l = 0x00;
+        emu.b = 0x20; emu.c = 0x00;
+        emu.memory[0] = 0x09; // ADD HL, BC
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.h, 0x30);
+        assert_eq!(emu.f & F_N, 0);
+
+        // ADC HL, DE (with Carry)
+        emu.f = F_C;
+        emu.h = 0x10; emu.l = 0x00;
+        emu.d = 0x10; emu.e = 0x00;
+        // ED 5A: ADC HL, DE
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0x5A;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.h, 0x20); assert_eq!(emu.l, 0x01);
+
+        // SBC HL, BC (No Carry)
+        emu.f = 0;
+        emu.h = 0x30; emu.l = 0x00;
+        emu.b = 0x10; emu.c = 0x00;
+        // ED 42: SBC HL, BC
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0x42;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.h, 0x20);
+        assert_ne!(emu.f & F_N, 0);
+    }
+
+    #[test]
+    fn test_rotates_shifts() {
+        let mut emu = Emulator::new();
+        
+        // RLC B
+        emu.b = 0x81; // 10000001
+        // CB 00
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x00;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.b, 0x03); // 00000011 (Rotate Left Circular, bit 7 goes to 0 and C)
+        assert_ne!(emu.f & F_C, 0);
+
+        // SLA C
+        emu.c = 0x01;
+        // CB 21
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x21;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.c, 0x02);
+
+        // SRA D (Arithmetic right shift, preserves sign)
+        emu.d = 0x84; // 10000100
+        // CB 2A
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x2A;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.d, 0xC2); // 11000010
+    }
+
+    #[test]
+    fn test_block_ops() {
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        
+        // CPI (Compare A with (HL), HL++, BC--)
+        emu.a = 0x55;
+        emu.h = 0x80; emu.l = 0x00;
+        emu.b = 0x00; emu.c = 0x02;
+        emu.memory[0x8000] = 0x55;
+        
+        // ED A1: CPI
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xA1;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        
+        assert_eq!(emu.h, 0x80); assert_eq!(emu.l, 0x01); // HL inc
+        assert_eq!(emu.c, 0x01); // BC dec
+        assert_ne!(emu.f & F_Z, 0); // Z set because A == (HL)
+    }
+
+    #[test]
+    fn test_exchanges() {
+        let mut emu = Emulator::new();
+        
+        // EX DE, HL
+        emu.d = 1; emu.e = 2;
+        emu.h = 3; emu.l = 4;
+        emu.memory[0] = 0xEB;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.d, 3); assert_eq!(emu.e, 4);
+        assert_eq!(emu.h, 1); assert_eq!(emu.l, 2);
+
+        // EX AF, AF'
+        emu.a = 0xAA; emu.f = 0xF0;
+        emu.memory[0] = 0x08;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.a, 0); // Assuming alt_af initialized to 0
+        emu.a = 0x55;
+        emu.memory[0] = 0x08;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.a, 0xAA);
+        assert_eq!(emu.f, 0xF0);
+    }
+
+    #[test]
+    fn test_io_ports() {
+        let mut emu = Emulator::new();
+        
+        // OUT (n), A
+        emu.a = 0x07; // White border
+        // D3 FE (OUT (0xFE), A)
+        // Note: In our emulator, OUT (n), A writes to port (A << 8) | n
+        // For border, we need port & 1 == 0. 0xFE is 11111110.
+        emu.memory[0] = 0xD3;
+        emu.memory[1] = 0xFE;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.border_color, 7);
+
+        // IN A, (n)
+        // DB FE
+        emu.memory[0] = 0xDB;
+        emu.memory[1] = 0xFE;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.a, 0xFF); // Mock returns 0xFF
+    }
+
+    #[test]
+    fn test_im() {
+        let mut emu = Emulator::new();
+        emu.im = 0;
+        // ED 56: IM 1
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0x56;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.im, 1);
+        
+        // ED 5E: IM 2
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0x5E;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.im, 2);
+    }
+
+    #[test]
+    fn test_ld_all_registers() {
+        let mut emu = Emulator::new();
+        let regs = [0, 1, 2, 3, 4, 5, 7]; // B, C, D, E, H, L, A
+        
+        for &dest in &regs {
+            for &src in &regs {
+                if dest == src { continue; }
+                
+                // Reset registers
+                emu.a = 0; emu.b = 0; emu.c = 0; emu.d = 0; emu.e = 0; emu.h = 0; emu.l = 0;
+                
+                let val = 0x10 * src + dest + 1;
+                match src {
+                    0 => emu.b = val, 1 => emu.c = val, 2 => emu.d = val, 3 => emu.e = val,
+                    4 => emu.h = val, 5 => emu.l = val, 7 => emu.a = val, _ => {}
+                }
+                
+                let opcode = 0x40 | (dest << 3) | src;
+                emu.memory[0] = opcode;
+                emu.pc = 0;
+                
+                let op = emu.fetch_byte();
+                emu.execute(op);
+                
+                let res = match dest {
+                    0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                    4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+                };
+                assert_eq!(res, val, "Failed LD dest={}, src={}", dest, src);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ld_hl_indirect() {
+        let mut emu = Emulator::new();
+        let regs = [0, 1, 2, 3, 4, 5, 7];
+        
+        // LD r, (HL)
+        for &dest in &regs {
+            emu.h = 0x80; emu.l = 0x00;
+            emu.memory[0x8000] = 0x55;
+            
+            let opcode = 0x40 | (dest << 3) | 6;
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            
+            let res = match dest {
+                0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+            };
+            
+            if dest == 4 { assert_eq!(emu.h, 0x55); }
+            else if dest == 5 { assert_eq!(emu.l, 0x55); }
+            else { assert_eq!(res, 0x55); }
+        }
+
+        // LD (HL), r
+        for &src in &regs {
+            emu.h = 0x80; emu.l = 0x00;
+            emu.memory[0x8000] = 0x00;
+            
+            let val = 0xAA;
+            match src {
+                0 => emu.b = val, 1 => emu.c = val, 2 => emu.d = val, 3 => emu.e = val,
+                4 => emu.h = val, 5 => emu.l = val, 7 => emu.a = val, _ => {}
+            }
+            
+            // If src is H or L, ensure HL is set correctly for the write address
+            if src == 4 { emu.h = 0x80; emu.l = 0x00; }
+            if src == 5 { emu.h = 0x80; emu.l = 0x00; }
+
+            let opcode = 0x70 | src;
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            
+            let expected = match src {
+                0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+            };
+            assert_eq!(emu.memory[0x8000], expected);
+        }
+        
+        // LD (HL), n
+        emu.h = 0x80; emu.l = 0x00;
+        emu.memory[0] = 0x36; // LD (HL), n
+        emu.memory[1] = 0x99;
+        emu.pc = 0;
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert_eq!(emu.memory[0x8000], 0x99);
+    }
+
+    #[test]
+    fn test_alu_all_registers() {
+        let mut emu = Emulator::new();
+        let regs = [0, 1, 2, 3, 4, 5, 7]; // B, C, D, E, H, L, A
+        
+        for &src in &regs {
+            // ADD A, r
+            emu.a = 10;
+            let val = 20;
+            match src {
+                0 => emu.b = val, 1 => emu.c = val, 2 => emu.d = val, 3 => emu.e = val,
+                4 => emu.h = val, 5 => emu.l = val, 7 => emu.a = val, _ => {}
+            }
+            let opcode = 0x80 | src;
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            if src == 7 { assert_eq!(emu.a, 40); } else { assert_eq!(emu.a, 30); }
+            
+            // SUB r
+            emu.a = 30;
+            match src {
+                0 => emu.b = val, 1 => emu.c = val, 2 => emu.d = val, 3 => emu.e = val,
+                4 => emu.h = val, 5 => emu.l = val, 7 => emu.a = val, _ => {}
+            }
+            let opcode = 0x90 | src;
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            if src == 7 { assert_eq!(emu.a, 0); } else { assert_eq!(emu.a, 10); }
+        }
+    }
+
+    #[test]
+    fn test_inc_dec_all_registers() {
+        let mut emu = Emulator::new();
+        let regs = [0, 1, 2, 3, 4, 5, 7];
+        
+        for &r in &regs {
+            // INC r
+            match r {
+                0 => emu.b = 10, 1 => emu.c = 10, 2 => emu.d = 10, 3 => emu.e = 10,
+                4 => emu.h = 10, 5 => emu.l = 10, 7 => emu.a = 10, _ => {}
+            }
+            let opcode = 0x04 | (r << 3);
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            
+            let res = match r {
+                0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+            };
+            assert_eq!(res, 11);
+            
+            // DEC r
+            let opcode = 0x05 | (r << 3);
+            emu.memory[0] = opcode;
+            emu.pc = 0;
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            
+            let res = match r {
+                0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+            };
+            assert_eq!(res, 10);
+        }
+    }
+
+    #[test]
+    fn test_ld_immediate_all_registers() {
+        let mut emu = Emulator::new();
+        let regs = [0, 1, 2, 3, 4, 5, 7];
+        
+        for &r in &regs {
+            let opcode = 0x06 | (r << 3);
+            emu.memory[0] = opcode;
+            emu.memory[1] = 0x77;
+            emu.pc = 0;
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            
+            let res = match r {
+                0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
+                4 => emu.h, 5 => emu.l, 7 => emu.a, _ => 0
+            };
+            assert_eq!(res, 0x77);
+        }
     }
 }
