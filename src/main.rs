@@ -16,20 +16,27 @@ fn main() -> Result<(), eframe::Error> {
 
 struct MyApp {
     emulator: Emulator,
+    last_frame_time: std::time::Instant,
 }
 
 impl Default for MyApp {
     fn default() -> Self {
         Self {
             emulator: Emulator::new(),
+            last_frame_time: std::time::Instant::now(),
         }
     }
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.emulator.step(); // виконати кілька інструкцій
-        self.emulator.render();
+        let now = std::time::Instant::now();
+        if now.duration_since(self.last_frame_time).as_millis() >= 20 { // ~50Hz (20ms)
+            self.last_frame_time = now;
+            self.emulator.step();
+            self.emulator.render();
+        }
+
         CentralPanel::default().show(ctx, |ui| {
             draw_screen(ui, &self.emulator.screen_buffer, emulator::FULL_WIDTH, emulator::FULL_HEIGHT);
         });

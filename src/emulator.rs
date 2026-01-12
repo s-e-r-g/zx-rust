@@ -49,6 +49,7 @@ pub struct Emulator {
     pub iff1: bool, pub iff2: bool,
     pub im: u8,
     pub alt_af: u16, pub alt_bc: u16, pub alt_de: u16, pub alt_hl: u16,
+    pub halted: bool,
 }
 
 impl Emulator {
@@ -61,8 +62,9 @@ impl Emulator {
             sp: 0,
             pc: 0x0000,
             ix: 0, iy: 0, i: 0, r: 0,
-            iff1: false, iff2: false, im: 0,
+            iff1: false, iff2: false, im: 1, // Spectrum defaults to IM 1 usually, but 0 on reset
             alt_af: 0, alt_bc: 0, alt_de: 0, alt_hl: 0,
+            halted: false,
         };
         emu.load_rom(); // Завантаж ROM
         emu
@@ -74,10 +76,10 @@ impl Emulator {
         if let Ok(rom) = std::fs::read(rom_name) {
             // Check if it looks like a valid ROM (exact size for 48K ROM)
             if rom.len() == 16384 {
-                self.memory[..16384].copy_from_slice(&rom);
-                loaded = true;
+                    self.memory[..16384].copy_from_slice(&rom);
+                    loaded = true;
             } else {
-                println!("Warning: 48.rom has incorrect size ({} bytes). Expected 16384 bytes.", rom.len());
+                println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
             }
         }
         
@@ -100,9 +102,47 @@ impl Emulator {
     }
 
     pub fn step(&mut self) {
+        // Simulate 50Hz interrupt at the start of the frame
+        if self.iff1 {
+            // In a real emulator, this happens based on cycles. 
+            // Here we just trigger it once per 'step' call (frame).
+            self.trigger_interrupt();
+        }
+
         for _ in 0..10000 {
+            if self.halted {
+                // CPU waits for interrupt. Since we handle interrupt outside this loop,
+                // we just break to simulate waiting for the next frame/interrupt.
+                break;
+            }
+
             let opcode = self.fetch_byte();
             self.execute(opcode);
+        }
+    }
+
+    fn trigger_interrupt(&mut self) {
+        // Accept interrupt
+        if self.halted {
+            self.halted = false;
+            self.pc = self.pc.wrapping_add(1);
+        }
+
+        self.iff1 = false;
+        self.iff2 = false;
+        
+        // Push PC
+        self.push(self.pc);
+        
+        // Jump to interrupt vector (IM 1 = 0x0038)
+        match self.im {
+            0 => { self.pc = 0x0038; }, // Effectively RST 38H (0xFF on bus)
+            1 => { self.pc = 0x0038; },
+            2 => {
+                let vector = (self.i as u16) << 8 | 0xFF; // Bus usually 0xFF
+                self.pc = self.read_word(vector);
+            },
+            _ => {}
         }
     }
 
@@ -403,7 +443,7 @@ impl Emulator {
                 }
             },
             1 => { // LD r, r' or HALT
-                if y == 6 && z == 6 { self.pc = self.pc.wrapping_sub(1); } // HALT
+                if y == 6 && z == 6 { self.halted = true; self.pc = self.pc.wrapping_sub(1); } // HALT (PC-1 to point to HALT again effectively, but halted flag stops fetch)
                 else { self.set_r8(y, self.get_r8(z, prefix, disp), prefix, disp); }
             },
             2 => { // ALU A, r
@@ -451,14 +491,12 @@ impl Emulator {
                     5 => {
                         if q == 0 { self.push(self.get_rp2(p, prefix)); } // PUSH rp2
                         else if p == 0 { let nn = self.fetch_word(); self.push(self.pc); self.pc = nn; } // CALL nn
+                        else if p == 2 { self.execute_ed(); } // ED prefix
                     },
                     6 => { let n = self.fetch_byte(); self.alu(y, n); }, // ALU A, n
                     7 => { self.push(self.pc); self.pc = (y as u16) * 8; }, // RST
                     _ => {}
                 }
-            },
-            4 => { // ED prefix
-                self.execute_ed();
             },
             _ => {}
         }
@@ -621,7 +659,8 @@ impl Emulator {
                         if y != 6 {
                             let val = self.read_port((self.b as u16) << 8 | self.c as u16);
                             self.set_r8(y, val, 0, 0);
-                            self.f = (self.f & F_C) | (if val == 0 { F_Z } else { 0 }) | (if val & 0x80 != 0 { F_S } else { 0 });
+                            self.f = (self.f & F_C) | (if val == 0 { F_Z } else { 0 }) | (if val & 0x80 != 0 { F_S } else { 0 }) |
+                                     (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                         }
                     },
                     1 => { // OUT (C), r
@@ -634,15 +673,40 @@ impl Emulator {
                         let hl = self.get_rp(2, 0);
                         let rp = self.get_rp(p, 0);
                         let cy = if self.f & F_C != 0 { 1 } else { 0 };
-                        let res = hl.wrapping_sub(rp).wrapping_sub(cy);
-                        self.set_rp(2, res, 0);
-                        self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) | F_N |
-                                 (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 });
+                        if q == 0 { // SBC HL, rp
+                            let res = hl.wrapping_sub(rp).wrapping_sub(cy);
+                            self.set_rp(2, res, 0);
+                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) | F_N |
+                                     (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 }) |
+                                     (if (hl as u32) < (rp as u32 + cy as u32) { F_C } else { 0 });
+                        } else { // ADC HL, rp
+                            let res = hl.wrapping_add(rp).wrapping_add(cy);
+                            self.set_rp(2, res, 0);
+                            self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) |
+                                     (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 }) |
+                                     (if (hl as u32 + rp as u32 + cy as u32) > 0xFFFF { F_C } else { 0 });
+                        }
                     },
                     3 => { // LD (nn), rp / LD rp, (nn)
                         let nn = self.fetch_word();
                         if q == 0 { self.write_word(nn, self.get_rp(p, 0)); }
                         else { let v = self.read_word(nn); self.set_rp(p, v, 0); }
+                    },
+                    4 => { // NEG
+                        let a = self.a;
+                        self.a = 0u8.wrapping_sub(a);
+                        let res = self.a;
+                        self.f = (if res == 0 { F_Z } else { 0 }) | F_N |
+                                 (if res & 0x80 != 0 { F_S } else { 0 }) |
+                                 (if a == 0x80 { F_PV } else { 0 }) |
+                                 (if (a & 0x0F) != 0 { F_H } else { 0 }) |
+                                 (if a != 0 { F_C } else { 0 });
+                    },
+                    5 => { // RETN / RETI
+                        self.pc = self.pop();
+                        if y != 1 { // RETN
+                            self.iff1 = self.iff2;
+                        }
                     },
                     7 => { // LD I, A / LD R, A etc
                         match y {
@@ -650,7 +714,33 @@ impl Emulator {
                             1 => { self.r = self.a; }, // LD R, A
                             2 => { self.a = self.i; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.i == 0 { F_Z } else { 0 }) | (if self.i & 0x80 != 0 { F_S } else { 0 }); }, // LD A, I
                             3 => { self.a = self.r; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.r == 0 { F_Z } else { 0 }) | (if self.r & 0x80 != 0 { F_S } else { 0 }); }, // LD A, R
+                            4 => { // RRD
+                                let hl = (self.h as u16) << 8 | self.l as u16;
+                                let val = self.read_byte(hl);
+                                let a = self.a;
+                                self.a = (a & 0xF0) | (val & 0x0F);
+                                let new_val = (val >> 4) | ((a & 0x0F) << 4);
+                                self.write_byte(hl, new_val);
+                                self.f = (self.f & F_C) | (if self.a == 0 { F_Z } else { 0 }) | (if self.a & 0x80 != 0 { F_S } else { 0 }) | (if self.a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                            },
+                            5 => { // RLD
+                                let hl = (self.h as u16) << 8 | self.l as u16;
+                                let val = self.read_byte(hl);
+                                let a = self.a;
+                                self.a = (a & 0xF0) | (val >> 4);
+                                let new_val = (val << 4) | (a & 0x0F);
+                                self.write_byte(hl, new_val);
+                                self.f = (self.f & F_C) | (if self.a == 0 { F_Z } else { 0 }) | (if self.a & 0x80 != 0 { F_S } else { 0 }) | (if self.a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                            },
                             _ => {}
+                        }
+                    },
+                    6 => { // IM 0/1/2
+                        match y & 0x03 {
+                            0 => self.im = 0,
+                            2 => self.im = 1,
+                            3 => self.im = 2,
+                            _ => self.im = 0,
                         }
                     },
                     _ => {}
@@ -658,10 +748,70 @@ impl Emulator {
             },
             2 => {
                 if z <= 3 && y >= 4 { // Block instructions (LDI, LDIR, etc)
-                    // Simplified implementation
+                    self.block_op(y, z);
                 }
             },
             _ => {}
+        }
+    }
+
+    fn block_op(&mut self, y: u8, z: u8) {
+        let mut hl = (self.h as u16) << 8 | self.l as u16;
+        let mut de = (self.d as u16) << 8 | self.e as u16;
+        let mut bc = (self.b as u16) << 8 | self.c as u16;
+        let mut repeat = false;
+
+        match z {
+            0 => { // LD block
+                let val = self.read_byte(hl);
+                self.write_byte(de, val);
+                
+                if y & 1 == 0 { // Inc (LDI/LDIR)
+                    hl = hl.wrapping_add(1);
+                    de = de.wrapping_add(1);
+                } else { // Dec (LDD/LDDR)
+                    hl = hl.wrapping_sub(1);
+                    de = de.wrapping_sub(1);
+                }
+                bc = bc.wrapping_sub(1);
+                
+                self.f = (self.f & !(F_H | F_N | F_PV)) | (if bc != 0 { F_PV } else { 0 });
+                
+                if (y & 2) != 0 && bc != 0 { // Repeat (LDIR/LDDR)
+                    repeat = true;
+                }
+            },
+            1 => { // CP block
+                let val = self.read_byte(hl);
+                let res = self.a.wrapping_sub(val);
+                
+                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                bc = bc.wrapping_sub(1);
+                
+                let h_flag = (self.a & 0xF) < (val & 0xF);
+                self.f = (self.f & !(F_S | F_Z | F_H | F_PV | F_N)) |
+                         (if res & 0x80 != 0 { F_S } else { 0 }) |
+                         (if res == 0 { F_Z } else { 0 }) |
+                         (if h_flag { F_H } else { 0 }) |
+                         (if bc != 0 { F_PV } else { 0 }) |
+                         F_N;
+                         
+                if (y & 2) != 0 && bc != 0 && res != 0 { // Repeat (CPIR/CPDR)
+                    repeat = true;
+                }
+            },
+            _ => {}
+        }
+
+        self.h = (hl >> 8) as u8;
+        self.l = (hl & 0xFF) as u8;
+        self.d = (de >> 8) as u8;
+        self.e = (de & 0xFF) as u8;
+        self.b = (bc >> 8) as u8;
+        self.c = (bc & 0xFF) as u8;
+
+        if repeat {
+            self.pc = self.pc.wrapping_sub(2); // Re-execute instruction
         }
     }
 
