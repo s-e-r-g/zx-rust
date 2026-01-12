@@ -50,6 +50,7 @@ pub struct Emulator {
     pub im: u8,
     pub alt_af: u16, pub alt_bc: u16, pub alt_de: u16, pub alt_hl: u16,
     pub halted: bool,
+    pub test_mode: bool, // Disable ROM protection during tests
 }
 
 impl Emulator {
@@ -62,9 +63,10 @@ impl Emulator {
             sp: 0,
             pc: 0x0000,
             ix: 0, iy: 0, i: 0, r: 0,
-            iff1: false, iff2: false, im: 1, // Spectrum defaults to IM 1 usually, but 0 on reset
+            iff1: false, iff2: false, im: 1,
             alt_af: 0, alt_bc: 0, alt_de: 0, alt_hl: 0,
             halted: false,
+            test_mode: false,
         };
         emu.load_rom(); // Завантаж ROM
         emu
@@ -72,7 +74,8 @@ impl Emulator {
 
     pub fn load_rom(&mut self) {
         let mut loaded = false;
-        let rom_name = "Robik_Basic48.rom"; // "48.rom"
+        //let rom_name = "Robik_Basic48.rom";
+        let rom_name = "48.rom";
         if let Ok(rom) = std::fs::read(rom_name) {
             // Check if it looks like a valid ROM (exact size for 48K ROM)
             if rom.len() == 16384 {
@@ -185,6 +188,10 @@ impl Emulator {
     }
 
     fn write_byte(&mut self, addr: u16, val: u8) {
+        // ROM protection: prevent writes to 0x0000-0x3FFF unless in test mode
+        if !self.test_mode && addr < 0x4000 {
+            return; // Silently ignore writes to ROM
+        }
         self.memory[addr as usize] = val;
     }
 
@@ -412,24 +419,28 @@ impl Emulator {
                         0 => { // RLCA
                             let a = self.a;
                             self.a = (a << 1) | (a >> 7);
-                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x80 != 0 { F_C } else { 0 });
+                            let pv = if self.a.count_ones() % 2 == 0 { F_PV } else { 0 };
+                            self.f = (self.f & !(F_H | F_N | F_C | F_PV)) | (if a & 0x80 != 0 { F_C } else { 0 }) | pv;
                         },
                         1 => { // RRCA
                             let a = self.a;
                             self.a = (a >> 1) | (a << 7);
-                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x01 != 0 { F_C } else { 0 });
+                            let pv = if self.a.count_ones() % 2 == 0 { F_PV } else { 0 };
+                            self.f = (self.f & !(F_H | F_N | F_C | F_PV)) | (if a & 0x01 != 0 { F_C } else { 0 }) | pv;
                         },
                         2 => { // RLA
                             let a = self.a;
                             let c = if self.f & F_C != 0 { 1 } else { 0 };
                             self.a = (a << 1) | c;
-                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x80 != 0 { F_C } else { 0 });
+                            let pv = if self.a.count_ones() % 2 == 0 { F_PV } else { 0 };
+                            self.f = (self.f & !(F_H | F_N | F_C | F_PV)) | (if a & 0x80 != 0 { F_C } else { 0 }) | pv;
                         },
                         3 => { // RRA
                             let a = self.a;
                             let c = if self.f & F_C != 0 { 0x80 } else { 0 };
                             self.a = (a >> 1) | c;
-                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x01 != 0 { F_C } else { 0 });
+                            let pv = if self.a.count_ones() % 2 == 0 { F_PV } else { 0 };
+                            self.f = (self.f & !(F_H | F_N | F_C | F_PV)) | (if a & 0x01 != 0 { F_C } else { 0 }) | pv;
                         },
                         4 => { // DAA
                             let mut a = self.a;
@@ -641,7 +652,8 @@ impl Emulator {
             },
             1 => { // BIT
                 let res = val & (1 << y);
-                self.f = (self.f & !(F_Z | F_N | F_H)) | F_H | (if res == 0 { F_Z } else { 0 });
+                let parity = val.count_ones() % 2 == 0;
+                self.f = (self.f & !(F_Z | F_N | F_H | F_PV)) | F_H | (if res == 0 { F_Z } else { 0 }) | (if parity { F_PV } else { 0 });
                 val // BIT doesn't change value
             },
             2 => val & !(1 << y), // RES
@@ -732,8 +744,8 @@ impl Emulator {
                         match y {
                             0 => { self.i = self.a; }, // LD I, A
                             1 => { self.r = self.a; }, // LD R, A
-                            2 => { self.a = self.i; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.i == 0 { F_Z } else { 0 }) | (if self.i & 0x80 != 0 { F_S } else { 0 }); }, // LD A, I
-                            3 => { self.a = self.r; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.r == 0 { F_Z } else { 0 }) | (if self.r & 0x80 != 0 { F_S } else { 0 }); }, // LD A, R
+                            2 => { self.a = self.i; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.i == 0 { F_Z } else { 0 }) | (if self.i & 0x80 != 0 { F_S } else { 0 }); self.f &= !F_N; }, // LD A, I
+                            3 => { self.a = self.r; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.r == 0 { F_Z } else { 0 }) | (if self.r & 0x80 != 0 { F_S } else { 0 }); self.f &= !F_N; }, // LD A, R
                             4 => { // RRD
                                 let hl = (self.h as u16) << 8 | self.l as u16;
                                 let val = self.read_byte(hl);
@@ -742,6 +754,7 @@ impl Emulator {
                                 let new_val = (val >> 4) | ((a & 0x0F) << 4);
                                 self.write_byte(hl, new_val);
                                 self.f = (self.f & F_C) | (if self.a == 0 { F_Z } else { 0 }) | (if self.a & 0x80 != 0 { F_S } else { 0 }) | (if self.a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                                self.f &= !F_N;
                             },
                             5 => { // RLD
                                 let hl = (self.h as u16) << 8 | self.l as u16;
@@ -751,6 +764,7 @@ impl Emulator {
                                 let new_val = (val << 4) | (a & 0x0F);
                                 self.write_byte(hl, new_val);
                                 self.f = (self.f & F_C) | (if self.a == 0 { F_Z } else { 0 }) | (if self.a & 0x80 != 0 { F_S } else { 0 }) | (if self.a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                                self.f &= !F_N;
                             },
                             _ => {}
                         }
@@ -906,13 +920,14 @@ mod tests {
 
     fn run_test(code: &[u8]) -> Emulator {
         let mut emu = Emulator::new();
+        emu.test_mode = true; // Allow writes to ROM area during tests
         // Clear memory and load code at 0x0000
         emu.memory.fill(0);
         for (i, &b) in code.iter().enumerate() {
             emu.memory[i] = b;
         }
         emu.pc = 0;
-        emu.sp = 0; // Set stack to top of memory (wraps to 0xFFFF) to avoid ROM protection
+        emu.sp = 0;
         
         // Run until PC goes past the code
         let end_pc = code.len() as u16;
@@ -1869,6 +1884,7 @@ mod tests {
     #[test]
     fn test_more_block_and_rotate_ops() {
         let mut emu = Emulator::new();
+        emu.test_mode = true;
 
         // --- LDD (ED A8) ---
         emu.memory.fill(0);
