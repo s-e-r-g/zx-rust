@@ -113,6 +113,7 @@ impl Emulator {
             if self.halted {
                 // CPU waits for interrupt. Since we handle interrupt outside this loop,
                 // we just break to simulate waiting for the next frame/interrupt.
+                self.r = self.r.wrapping_add(1);
                 break;
             }
 
@@ -1510,5 +1511,58 @@ mod tests {
             };
             assert_eq!(res, 0x77);
         }
+    }
+
+    #[test]
+    fn test_halt_interrupt() {
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        // 0: EI (FB)
+        // 1: HALT (76)
+        // 2: LD A, 0xAA (3E AA)
+        // 4: NOP (00)
+        // ...
+        // 0x0038: LD A, 0xFF (3E FF); EI (FB); RET (C9)
+        
+        let code = [0xFB, 0x76, 0x3E, 0xAA, 0x00];
+        for (i, &b) in code.iter().enumerate() { emu.memory[i] = b; }
+        
+        // ISR at 0x0038
+        emu.memory[0x0038] = 0x3E;
+        emu.memory[0x0039] = 0xFF;
+        emu.memory[0x003A] = 0xFB;
+        emu.memory[0x003B] = 0xC9;
+        
+        emu.pc = 0;
+        emu.sp = 0; // Top of RAM
+        
+        // Step 1: Execute EI
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert!(emu.iff1);
+        assert!(!emu.halted);
+        
+        // Step 2: Execute HALT
+        let op = emu.fetch_byte();
+        emu.execute(op);
+        assert!(emu.halted);
+        assert_eq!(emu.pc, 1); // Points to HALT
+        
+        // Step 3: Trigger Interrupt
+        emu.trigger_interrupt();
+        
+        assert!(!emu.halted);
+        assert!(!emu.iff1); // Disabled in ISR entry
+        assert_eq!(emu.pc, 0x0038); // Jumped to ISR
+        
+        // Check stack
+        let ret_addr = emu.read_word(emu.sp);
+        assert_eq!(ret_addr, 2); // Should return to instruction after HALT
+        
+        // Run ISR and return
+        for _ in 0..3 { let op = emu.fetch_byte(); emu.execute(op); }
+        
+        assert_eq!(emu.pc, 2);
+        assert_eq!(emu.a, 0xFF);
     }
 }
