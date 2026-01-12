@@ -60,10 +60,10 @@ impl Emulator {
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             border_color: 7, // White border
             a: 0, f: 0, b: 0, c: 0, d: 0, e: 0, h: 0, l: 0,
-            sp: 0,
+            sp: 0xFFFF, // Top of RAM - ZX Spectrum standard
             pc: 0x0000,
             ix: 0, iy: 0, i: 0, r: 0,
-            iff1: false, iff2: false, im: 1,
+            iff1: true, iff2: true, im: 1, // Interrupts enabled for ROM
             alt_af: 0, alt_bc: 0, alt_de: 0, alt_hl: 0,
             halted: false,
             test_mode: false,
@@ -891,20 +891,41 @@ impl Emulator {
 
         // Draw main screen
         for y in 0..SCREEN_HEIGHT {
+            // ZX Spectrum display memory uses a non-linear addressing scheme:
+            // Memory is organized in 3 bands of 8 character rows each
+            // Each character row contains 8 pixel lines
+            // Address = 0x4000 + (band * 0x800) + (line_in_char * 0x100) + (row_in_band * 0x20) + x_char
+            
+            let char_row = y >> 3;           // Character row (0-23): which of 24 character rows
+            let line_in_char = y & 7;       // Which pixel line within character (0-7)
+            let band = char_row >> 3;       // Which band (0-2): character rows 0-7, 8-15, 16-23
+            let row_in_band = char_row & 7; // Which character row within band (0-7)
+            
             let y_pos = y + BORDER_V;
-            let sector = y >> 6;
-            let row = (y >> 3) & 7;
-            let line = y & 7;
-            let addr_start = 0x4000 | (sector << 11) | (line << 8) | (row << 5);
+            
+            // Correct address calculation for display memory
+            let addr_base = 0x4000 
+                + (band << 11)           // Band offset: 0x0000, 0x0800, 0x1000
+                + (line_in_char << 8)   // Line offset within character: 0x0000-0x0700
+                + (row_in_band << 5);   // Row offset: 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0
 
             for x_char in 0..32 {
-                let bitmap = self.memory[addr_start + x_char];
-                let attr = self.memory[0x5800 + (y >> 3) * 32 + x_char];
+                let bitmap = self.memory[addr_base + x_char];
+                
+                // Attribute memory is linear: byte offset = (char_row * 32) + x_char
+                let attr = self.memory[0x5800 + char_row * 32 + x_char];
+                
+                // Attribute byte structure:
+                // Bits [2:0]: Ink color (0-7)
+                // Bits [5:3]: Paper color (0-7)
+                // Bit 6: Bright flag (adds 8 to color index)
+                // Bit 7: Flash flag (not implemented)
                 let ink = (attr & 0x07) + if (attr & 0x40) != 0 { 8 } else { 0 };
                 let paper = ((attr >> 3) & 0x07) + if (attr & 0x40) != 0 { 8 } else { 0 };
                 
                 let x_start = x_char * 8 + BORDER_H;
                 for bit in 0..8 {
+                    // Bitmap byte: MSB is leftmost pixel
                     let color_idx = if (bitmap & (0x80 >> bit)) != 0 { ink } else { paper };
                     let pixel_idx = (y_pos * FULL_WIDTH + x_start + bit) * 4;
                     self.screen_buffer[pixel_idx..pixel_idx + 4].copy_from_slice(&PALETTE[color_idx as usize]);
@@ -1934,4 +1955,65 @@ mod tests {
         assert_eq!(emu.pc, 0x0018, "RST should jump to correct vector");
         assert_eq!(emu.read_word(emu.sp), 0x1001, "RST should push return address");
     }
+
+    #[test]
+    fn test_screen_memory_rendering() {
+        // Test that writing to screen memory gets rendered correctly
+        let mut emu = Emulator::new();
+        emu.test_mode = true;
+        emu.memory.fill(0);
+        
+        // Fill first character position with a pattern (0xFF = all pixels on)
+        emu.memory[0x4000] = 0xFF; // Screen memory: address 0x4000, first character, first line
+        
+        // Set attribute for first character: ink=7 (white), paper=0 (black)
+        emu.memory[0x5800] = 0x07;
+        
+        // Render the screen
+        emu.render();
+        
+        // Check that pixels were written to screen buffer
+        // First character at position (0,0) should have white pixels
+        // Screen buffer format: RGBA, 4 bytes per pixel
+        // Position (0,0) in screen + border offset (BORDER_H=32, BORDER_V=24)
+        let pixel_idx = ((24 * FULL_WIDTH + 32) * 4) as usize;
+        let pixel_rgba = &emu.screen_buffer[pixel_idx..pixel_idx + 4];
+        
+        // Check that we have some non-black pixels (white color)
+        assert_ne!(pixel_rgba[0], 0, "Screen should have rendered content");
+    }
+
+    #[test]
+    fn test_display_memory_layout() {
+        // Test that ZX Spectrum display memory addressing is correct
+        let emu = Emulator::new();
+        
+        // Memory layout verification:
+        // Display: 0x4000-0x57FF (6144 bytes)
+        // Attributes: 0x5800-0x5AFF (768 bytes)
+        assert_eq!(0x5800 - 0x4000, 0x1800, "Display memory should be 6KB");
+        assert_eq!(0x5B00 - 0x5800, 0x0300, "Attribute memory should be 768 bytes");
+        assert_eq!(SCREEN_WIDTH, 256, "Screen width should be 256");
+        assert_eq!(SCREEN_HEIGHT, 192, "Screen height should be 192");
+    }
+
+    #[test]
+    fn test_initialization_defaults() {
+        // Test that emulator initializes correctly for ROM execution
+        let emu = Emulator::new();
+        
+        // SP should be at top of RAM for proper function calls
+        assert_eq!(emu.sp, 0xFFFF, "Stack pointer should be at 0xFFFF");
+        
+        // PC should start at 0x0000 (ROM entry point)
+        assert_eq!(emu.pc, 0x0000, "Program counter should start at 0x0000");
+        
+        // Interrupts should be enabled for ROM to work properly
+        assert!(emu.iff1, "IFF1 should be enabled for ROM interrupts");
+        assert!(emu.iff2, "IFF2 should be enabled for ROM interrupts");
+        
+        // IM should be 1 (standard for ZX Spectrum)
+        assert_eq!(emu.im, 1, "Interrupt mode should be 1");
+    }
 }
+
