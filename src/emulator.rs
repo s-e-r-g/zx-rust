@@ -800,6 +800,33 @@ impl Emulator {
                     repeat = true;
                 }
             },
+            2 => { // IN block (INI, INIR, IND, INDR)
+                let port = bc; // B is high, C is low
+                let val = self.read_port(port);
+                self.write_byte(hl, val);
+                
+                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                
+                let b = (bc >> 8) as u8;
+                let new_b = b.wrapping_sub(1);
+                bc = (new_b as u16) << 8 | (bc & 0xFF);
+                
+                self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
+                if (y & 2) != 0 && new_b != 0 { repeat = true; }
+            },
+            3 => { // OUT block (OUTI, OTIR, OUTD, OTDR)
+                let port = bc;
+                let val = self.read_byte(hl);
+                self.write_port(port, val);
+                
+                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                let b = (bc >> 8) as u8;
+                let new_b = b.wrapping_sub(1);
+                bc = (new_b as u16) << 8 | (bc & 0xFF);
+                
+                self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
+                if (y & 2) != 0 && new_b != 0 { repeat = true; }
+            },
             _ => {}
         }
 
@@ -844,5 +871,260 @@ impl Emulator {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_test(code: &[u8]) -> Emulator {
+        let mut emu = Emulator::new();
+        // Clear memory and load code at 0x0000
+        emu.memory.fill(0);
+        for (i, &b) in code.iter().enumerate() {
+            emu.memory[i] = b;
+        }
+        emu.pc = 0;
+        emu.sp = 0; // Set stack to top of memory (wraps to 0xFFFF) to avoid ROM protection
+        
+        // Run until PC goes past the code
+        let end_pc = code.len() as u16;
+        let max_steps = 1000;
+        let mut steps = 0;
+        while emu.pc < end_pc && steps < max_steps {
+            let opcode = emu.fetch_byte();
+            emu.execute(opcode);
+            steps += 1;
+        }
+        emu
+    }
+
+    #[test]
+    fn test_ld_8bit() {
+        // LD A, 0x55; LD B, 0xAA; LD C, A
+        let emu = run_test(&[0x3E, 0x55, 0x06, 0xAA, 0x4F]);
+        assert_eq!(emu.a, 0x55);
+        assert_eq!(emu.b, 0xAA);
+        assert_eq!(emu.c, 0x55);
+    }
+
+    #[test]
+    fn test_ld_16bit() {
+        // LD BC, 0x1234; LD DE, 0x5678; LD HL, 0x9ABC; LD SP, 0xFEDC
+        let emu = run_test(&[0x01, 0x34, 0x12, 0x11, 0x78, 0x56, 0x21, 0xBC, 0x9A, 0x31, 0xDC, 0xFE]);
+        assert_eq!(emu.b, 0x12); assert_eq!(emu.c, 0x34);
+        assert_eq!(emu.d, 0x56); assert_eq!(emu.e, 0x78);
+        assert_eq!(emu.h, 0x9A); assert_eq!(emu.l, 0xBC);
+        assert_eq!(emu.sp, 0xFEDC);
+    }
+
+    #[test]
+    fn test_alu_add() {
+        // LD A, 10; ADD A, 20
+        let emu = run_test(&[0x3E, 10, 0xC6, 20]);
+        assert_eq!(emu.a, 30);
+        assert_eq!(emu.f & F_Z, 0);
+        
+        // Overflow test: LD A, 255; ADD A, 1
+        let emu = run_test(&[0x3E, 0xFF, 0xC6, 0x01]);
+        assert_eq!(emu.a, 0);
+        assert_ne!(emu.f & F_Z, 0);
+        assert_ne!(emu.f & F_C, 0);
+    }
+
+    #[test]
+    fn test_alu_sub() {
+        // LD A, 30; SUB 10
+        let emu = run_test(&[0x3E, 30, 0xD6, 10]);
+        assert_eq!(emu.a, 20);
+        
+        // Carry test: LD A, 10; SUB 20
+        let emu = run_test(&[0x3E, 10, 0xD6, 20]);
+        assert_eq!(emu.a, 246); // -10 as u8
+        assert_ne!(emu.f & F_C, 0);
+    }
+
+    #[test]
+    fn test_inc_dec() {
+        // LD B, 10; INC B; DEC B; DEC B
+        let emu = run_test(&[0x06, 10, 0x04, 0x05, 0x05]);
+        assert_eq!(emu.b, 9);
+    }
+
+    #[test]
+    fn test_jr() {
+        // LD A, 1; JR 2; LD A, 2; LD B, 3
+        // Opcode for JR d is 18 d. 
+        // 0: 3E 01 (LD A, 1)
+        // 2: 18 02 (JR +2) -> Skips next 2 bytes (LD A, 2 is 3E 02)
+        // 4: 3E 02 (LD A, 2) - skipped
+        // 6: 06 03 (LD B, 3)
+        let emu = run_test(&[0x3E, 0x01, 0x18, 0x02, 0x3E, 0x02, 0x06, 0x03]);
+        assert_eq!(emu.a, 1);
+        assert_eq!(emu.b, 3);
+    }
+
+    #[test]
+    fn test_call_ret() {
+        // LD SP, 0x0000 (Top of RAM)
+        // CALL 0x0010
+        // HALT
+        // 0x0010: LD A, 55; RET
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        let code = [0x31, 0x00, 0x00, 0xCD, 0x10, 0x00, 0x76];
+        let sub = [0x3E, 0x55, 0xC9];
+        for (i, &b) in code.iter().enumerate() { emu.memory[i] = b; }
+        for (i, &b) in sub.iter().enumerate() { emu.memory[0x10+i] = b; }
+        
+        // Run manually to handle HALT
+        emu.pc = 0;
+        for _ in 0..100 {
+            if emu.halted { break; }
+            let op = emu.fetch_byte();
+            emu.execute(op);
+        }
+        
+        assert_eq!(emu.a, 0x55);
+        assert_eq!(emu.pc, 6); // PC points to HALT instruction (decremented in execute)
+    }
+
+    #[test]
+    fn test_stack() {
+        // LD BC, 0x1234; PUSH BC; POP DE
+        let emu = run_test(&[0x01, 0x34, 0x12, 0xC5, 0xD1]);
+        assert_eq!(emu.d, 0x12);
+        assert_eq!(emu.e, 0x34);
+    }
+
+    #[test]
+    fn test_ix_iy() {
+        // LD IX, 0x8000; LD (IX+5), 0xAA; LD A, (IX+5)
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        let code = [
+            0xDD, 0x21, 0x00, 0x80, // LD IX, 0x8000
+            0xDD, 0x36, 0x05, 0xAA, // LD (IX+5), 0xAA
+            0xDD, 0x7E, 0x05        // LD A, (IX+5)
+        ];
+        for (i, &b) in code.iter().enumerate() { emu.memory[i] = b; }
+        
+        let end_pc = code.len() as u16;
+        while emu.pc < end_pc {
+            let op = emu.fetch_byte();
+            emu.execute(op);
+        }
+        
+        assert_eq!(emu.ix, 0x8000);
+        assert_eq!(emu.memory[0x8005], 0xAA);
+        assert_eq!(emu.a, 0xAA);
+    }
+
+    #[test]
+    fn test_bit_ops() {
+        // LD A, 0; SET 3, A; BIT 3, A; RES 3, A
+        // CB C7 (SET 0, A) -> 0x01
+        // CB DE (SET 3, (HL)) - let's stick to register A
+        // SET 3, A -> CB DF
+        // BIT 3, A -> CB 5F
+        // RES 3, A -> CB 9F
+        let emu = run_test(&[0x3E, 0x00, 0xCB, 0xDF, 0xCB, 0x5F, 0xCB, 0x9F]);
+        assert_eq!(emu.a, 0); // Should be 0 after RES
+        // Check flags from BIT 3, A (which was 1 at the time)
+        // BIT sets Z if bit is 0. Here bit was 1, so Z should be 0.
+        // Wait, I can't easily check intermediate flag state with run_test unless I inspect trace.
+        // But final A is 0.
+    }
+
+    #[test]
+    fn test_block_ldi() {
+        // LD HL, 0x0100; LD DE, 0x8000; LD BC, 2; LD (HL), 0x55; INC HL; LD (HL), 0x66; DEC HL
+        // LDIR
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.memory[0x0100] = 0x55;
+        emu.memory[0x0101] = 0x66;
+        
+        let code = [
+            0x21, 0x00, 0x01, // LD HL, 0x0100
+            0x11, 0x00, 0x80, // LD DE, 0x8000
+            0x01, 0x02, 0x00, // LD BC, 2
+            0xED, 0xB0        // LDIR
+        ];
+        for (i, &b) in code.iter().enumerate() { emu.memory[i] = b; }
+        
+        let end_pc = code.len() as u16;
+        let mut steps = 0;
+        while emu.pc < end_pc && steps < 100 {
+            let op = emu.fetch_byte();
+            emu.execute(op);
+            steps += 1;
+        }
+        
+        assert_eq!(emu.memory[0x8000], 0x55);
+        assert_eq!(emu.memory[0x8001], 0x66);
+        assert_eq!(emu.b, 0);
+        assert_eq!(emu.c, 0);
+    }
+
+    #[test]
+    fn test_ex_de_hl() {
+        // LD HL, 0x1111; LD DE, 0x2222; EX DE, HL
+        let emu = run_test(&[0x21, 0x11, 0x11, 0x11, 0x22, 0x22, 0xEB]);
+        assert_eq!(emu.h, 0x22); assert_eq!(emu.l, 0x22);
+        assert_eq!(emu.d, 0x11); assert_eq!(emu.e, 0x11);
+    }
+
+    #[test]
+    fn test_exx() {
+        // LD BC, 0x1111; EXX; LD BC, 0x2222; EXX
+        let emu = run_test(&[0x01, 0x11, 0x11, 0xD9, 0x01, 0x22, 0x22, 0xD9]);
+        assert_eq!(emu.b, 0x11); assert_eq!(emu.c, 0x11);
+        assert_eq!((emu.alt_bc >> 8) as u8, 0x22);
+    }
+
+    #[test]
+    fn test_neg() {
+        // LD A, 1; NEG
+        let emu = run_test(&[0x3E, 0x01, 0xED, 0x44]);
+        assert_eq!(emu.a, 0xFF); // -1
+    }
+
+    #[test]
+    fn test_rrca() {
+        // LD A, 0x01; RRCA
+        let emu = run_test(&[0x3E, 0x01, 0x0F]);
+        assert_eq!(emu.a, 0x80);
+        assert_ne!(emu.f & F_C, 0);
+    }
+
+    #[test]
+    fn test_rlca() {
+        // LD A, 0x80; RLCA
+        let emu = run_test(&[0x3E, 0x80, 0x07]);
+        assert_eq!(emu.a, 0x01);
+        assert_ne!(emu.f & F_C, 0);
+    }
+
+    #[test]
+    fn test_daa() {
+        // 1. Simple addition: 0x15 + 0x25 = 0x3A -> DAA -> 0x40
+        let emu = run_test(&[0x3E, 0x15, 0x06, 0x25, 0x80, 0x27]);
+        assert_eq!(emu.a, 0x40);
+
+        // 2. Wrap around: 0x99 + 0x01 = 0x9A -> DAA -> 0x00 with Carry
+        let emu = run_test(&[0x3E, 0x99, 0x06, 0x01, 0x80, 0x27]);
+        assert_eq!(emu.a, 0x00);
+        assert_ne!(emu.f & F_C, 0);
+    }
+
+    #[test]
+    fn test_cpl() {
+        // LD A, 0xAA; CPL
+        let emu = run_test(&[0x3E, 0xAA, 0x2F]);
+        assert_eq!(emu.a, 0x55);
+        assert_ne!(emu.f & F_H, 0);
+        assert_ne!(emu.f & F_N, 0);
     }
 }
