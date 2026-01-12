@@ -69,20 +69,33 @@ impl Emulator {
     }
 
     pub fn load_rom(&mut self) {
-        // Завантажити ROM у верхню частину памʼяті
-        // (Ви можете зчитати .rom файл пізніше)
-        // Simple test program to fill screen
-        let code: &[u8] = &[
-            0x21, 0x00, 0x40, // LD HL, 0x4000
-            0x34,             // INC (HL)
-            0x23,             // INC HL
-            0x7C,             // LD A, H
-            0xFE, 0x58,       // CP 0x58
-            0x20, 0xF7,       // JR NZ, -9 (to 0x34)
-            0xC3, 0x00, 0x00, // JP 0x0000
-        ];
-        for (i, &b) in code.iter().enumerate() {
-            self.memory[i] = b;
+        let mut loaded = false;
+        let rom_name = "Robik_Basic48.rom"; // "48.rom"
+        if let Ok(rom) = std::fs::read(rom_name) {
+            // Check if it looks like a valid ROM (exact size for 48K ROM)
+            if rom.len() == 16384 {
+                self.memory[..16384].copy_from_slice(&rom);
+                loaded = true;
+            } else {
+                println!("Warning: 48.rom has incorrect size ({} bytes). Expected 16384 bytes.", rom.len());
+            }
+        }
+        
+        if !loaded {
+            println!("Loading built-in test program...");
+            // Simple test program to fill screen
+            let code: &[u8] = &[
+                0x21, 0x00, 0x40, // LD HL, 0x4000
+                0x34,             // INC (HL)
+                0x23,             // INC HL
+                0x7C,             // LD A, H
+                0xFE, 0x58,       // CP 0x58
+                0x20, 0xF7,       // JR NZ, -9 (to 0x34)
+                0xC3, 0x00, 0x00, // JP 0x0000
+            ];
+            for (i, &b) in code.iter().enumerate() {
+                self.memory[i] = b;
+            }
         }
     }
 
@@ -98,6 +111,22 @@ impl Emulator {
         self.pc = self.pc.wrapping_add(1);
         self.r = self.r.wrapping_add(1);
         val
+    }
+
+    fn read_port(&self, port: u16) -> u8 {
+        // Simple mock for 48K Spectrum
+        // Port 0xFE (Keyboard/Ear)
+        if (port & 0x0001) == 0 {
+            return 0xFF; // No keys pressed
+        }
+        0xFF
+    }
+
+    fn write_port(&mut self, port: u16, val: u8) {
+        // Port 0xFE (Border/Mic/Beep)
+        if (port & 0x0001) == 0 {
+            self.border_color = val & 0x07;
+        }
     }
 
     fn fetch_word(&mut self) -> u16 {
@@ -129,41 +158,63 @@ impl Emulator {
 
     // Helper to get register by index (0..7)
     // 0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A
-    fn get_r8(&self, idx: u8) -> u8 {
+    fn get_r8(&self, idx: u8, prefix: u8, disp: i8) -> u8 {
         match idx {
             0 => self.b, 1 => self.c, 2 => self.d, 3 => self.e,
-            4 => self.h, 5 => self.l, 6 => self.read_byte((self.h as u16) << 8 | self.l as u16),
+            4 => if prefix == 0xDD { (self.ix >> 8) as u8 } else if prefix == 0xFD { (self.iy >> 8) as u8 } else { self.h },
+            5 => if prefix == 0xDD { (self.ix & 0xFF) as u8 } else if prefix == 0xFD { (self.iy & 0xFF) as u8 } else { self.l },
+            6 => {
+                let addr = if prefix == 0xDD {
+                    self.ix.wrapping_add(disp as u16)
+                } else if prefix == 0xFD {
+                    self.iy.wrapping_add(disp as u16)
+                } else {
+                    (self.h as u16) << 8 | self.l as u16
+                };
+                self.read_byte(addr)
+            },
             7 => self.a, _ => 0,
         }
     }
 
-    fn set_r8(&mut self, idx: u8, val: u8) {
+    fn set_r8(&mut self, idx: u8, val: u8, prefix: u8, disp: i8) {
         match idx {
             0 => self.b = val, 1 => self.c = val, 2 => self.d = val, 3 => self.e = val,
-            4 => self.h = val, 5 => self.l = val, 6 => self.write_byte((self.h as u16) << 8 | self.l as u16, val),
+            4 => if prefix == 0xDD { self.ix = (self.ix & 0xFF) | ((val as u16) << 8) } else if prefix == 0xFD { self.iy = (self.iy & 0xFF) | ((val as u16) << 8) } else { self.h = val },
+            5 => if prefix == 0xDD { self.ix = (self.ix & 0xFF00) | (val as u16) } else if prefix == 0xFD { self.iy = (self.iy & 0xFF00) | (val as u16) } else { self.l = val },
+            6 => {
+                let addr = if prefix == 0xDD {
+                    self.ix.wrapping_add(disp as u16)
+                } else if prefix == 0xFD {
+                    self.iy.wrapping_add(disp as u16)
+                } else {
+                    (self.h as u16) << 8 | self.l as u16
+                };
+                self.write_byte(addr, val)
+            },
             7 => self.a = val, _ => {},
         }
     }
 
     // Helper for 16-bit registers (dd/rp)
     // 0=BC, 1=DE, 2=HL, 3=SP
-    fn get_rp(&self, idx: u8) -> u16 {
+    fn get_rp(&self, idx: u8, prefix: u8) -> u16 {
         match idx {
             0 => (self.b as u16) << 8 | self.c as u16,
             1 => (self.d as u16) << 8 | self.e as u16,
-            2 => (self.h as u16) << 8 | self.l as u16,
+            2 => if prefix == 0xDD { self.ix } else if prefix == 0xFD { self.iy } else { (self.h as u16) << 8 | self.l as u16 },
             3 => self.sp,
             _ => 0,
         }
     }
 
-    fn set_rp(&mut self, idx: u8, val: u16) {
+    fn set_rp(&mut self, idx: u8, val: u16, prefix: u8) {
         let h = (val >> 8) as u8;
         let l = (val & 0xFF) as u8;
         match idx {
             0 => { self.b = h; self.c = l; },
             1 => { self.d = h; self.e = l; },
-            2 => { self.h = h; self.l = l; },
+            2 => if prefix == 0xDD { self.ix = val } else if prefix == 0xFD { self.iy = val } else { self.h = h; self.l = l; },
             3 => { self.sp = val; },
             _ => {},
         }
@@ -171,12 +222,12 @@ impl Emulator {
 
     // Helper for PUSH/POP (qq/rp2)
     // 0=BC, 1=DE, 2=HL, 3=AF
-    fn get_rp2(&self, idx: u8) -> u16 {
-        if idx == 3 { (self.a as u16) << 8 | self.f as u16 } else { self.get_rp(idx) }
+    fn get_rp2(&self, idx: u8, prefix: u8) -> u16 {
+        if idx == 3 { (self.a as u16) << 8 | self.f as u16 } else { self.get_rp(idx, prefix) }
     }
 
-    fn set_rp2(&mut self, idx: u8, val: u16) {
-        if idx == 3 { self.a = (val >> 8) as u8; self.f = (val & 0xFF) as u8; } else { self.set_rp(idx, val); }
+    fn set_rp2(&mut self, idx: u8, val: u16, prefix: u8) {
+        if idx == 3 { self.a = (val >> 8) as u8; self.f = (val & 0xFF) as u8; } else { self.set_rp(idx, val, prefix); }
     }
 
     fn push(&mut self, val: u16) {
@@ -204,12 +255,31 @@ impl Emulator {
         }
     }
 
-    fn execute(&mut self, opcode: u8) {
+    fn execute(&mut self, mut opcode: u8) {
+        let mut prefix = 0;
+        if opcode == 0xDD || opcode == 0xFD {
+            prefix = opcode;
+            opcode = self.fetch_byte();
+        }
+
         let x = opcode >> 6;
         let y = (opcode >> 3) & 7;
         let z = opcode & 7;
         let p = y >> 1;
         let q = y & 1;
+
+        // Displacement for (IX+d) / (IY+d)
+        let mut disp: i8 = 0;
+        let use_disp = prefix != 0 && (
+            (x == 1 && (z == 6 || y == 6)) || // LD r, (HL) or LD (HL), r
+            (x == 2 && z == 6) || // ALU A, (HL)
+            (x == 0 && z == 6 && y == 6) || // LD (HL), n
+            (x == 0 && (z == 4 || z == 5) && y == 6) // INC/DEC (HL)
+        );
+
+        if use_disp {
+            disp = self.fetch_byte() as i8;
+        }
 
         match x {
             0 => {
@@ -239,12 +309,12 @@ impl Emulator {
                     1 => {
                         if q == 0 { // LD rp, nn
                             let nn = self.fetch_word();
-                            self.set_rp(p, nn);
+                            self.set_rp(p, nn, prefix);
                         } else { // ADD HL, rp
-                            let hl = self.get_rp(2);
-                            let rp = self.get_rp(p);
+                            let hl = self.get_rp(2, prefix);
+                            let rp = self.get_rp(p, prefix);
                             let res = hl.wrapping_add(rp);
-                            self.set_rp(2, res);
+                            self.set_rp(2, res, prefix);
                             // Flags: H, N=0, C
                             self.f = (self.f & !(F_N | F_H | F_C)) |
                                      if hl > 0xFFFF - rp { F_C } else { 0 } |
@@ -254,70 +324,106 @@ impl Emulator {
                     2 => {
                         if q == 0 {
                             match p {
-                                0 => self.write_byte(self.get_rp(0), self.a), // LD (BC), A
-                                1 => self.write_byte(self.get_rp(1), self.a), // LD (DE), A
-                                2 => { let nn = self.fetch_word(); self.write_word(nn, self.get_rp(2)); }, // LD (nn), HL
+                                0 => self.write_byte(self.get_rp(0, 0), self.a), // LD (BC), A
+                                1 => self.write_byte(self.get_rp(1, 0), self.a), // LD (DE), A
+                                2 => { let nn = self.fetch_word(); self.write_word(nn, self.get_rp(2, prefix)); }, // LD (nn), HL/IX/IY
                                 3 => { let nn = self.fetch_word(); self.write_byte(nn, self.a); }, // LD (nn), A
                                 _ => {}
                             }
                         } else {
                             match p {
-                                0 => self.a = self.read_byte(self.get_rp(0)), // LD A, (BC)
-                                1 => self.a = self.read_byte(self.get_rp(1)), // LD A, (DE)
-                                2 => { let nn = self.fetch_word(); let v = self.read_word(nn); self.set_rp(2, v); }, // LD HL, (nn)
+                                0 => self.a = self.read_byte(self.get_rp(0, 0)), // LD A, (BC)
+                                1 => self.a = self.read_byte(self.get_rp(1, 0)), // LD A, (DE)
+                                2 => { let nn = self.fetch_word(); let v = self.read_word(nn); self.set_rp(2, v, prefix); }, // LD HL/IX/IY, (nn)
                                 3 => { let nn = self.fetch_word(); self.a = self.read_byte(nn); }, // LD A, (nn)
                                 _ => {}
                             }
                         }
                     },
                     3 => { // INC/DEC rp
-                        let v = self.get_rp(p);
-                        self.set_rp(p, if q == 0 { v.wrapping_add(1) } else { v.wrapping_sub(1) });
+                        let v = self.get_rp(p, prefix);
+                        self.set_rp(p, if q == 0 { v.wrapping_add(1) } else { v.wrapping_sub(1) }, prefix);
                     },
                     4 => { // INC r
-                        let v = self.get_r8(y);
+                        let v = self.get_r8(y, prefix, disp);
                         let res = v.wrapping_add(1);
-                        self.set_r8(y, res);
+                        self.set_r8(y, res, prefix, disp);
                         self.f = (self.f & F_C) | (if res == 0 { F_Z } else { 0 }) | (if res & 0x80 != 0 { F_S } else { 0 }) |
                                  (if (v & 0xF) == 0xF { F_H } else { 0 }) | (if v == 0x7F { F_PV } else { 0 });
                     },
                     5 => { // DEC r
-                        let v = self.get_r8(y);
+                        let v = self.get_r8(y, prefix, disp);
                         let res = v.wrapping_sub(1);
-                        self.set_r8(y, res);
+                        self.set_r8(y, res, prefix, disp);
                         self.f = (self.f & F_C) | F_N | (if res == 0 { F_Z } else { 0 }) | (if res & 0x80 != 0 { F_S } else { 0 }) |
                                  (if (v & 0xF) == 0 { F_H } else { 0 }) | (if v == 0x80 { F_PV } else { 0 });
                     },
                     6 => { // LD r, n
                         let n = self.fetch_byte();
-                        self.set_r8(y, n);
+                        self.set_r8(y, n, prefix, disp);
                     },
-                    7 => { /* RLCA, RRCA, etc. - simplified */ },
+                    7 => match y {
+                        0 => { // RLCA
+                            let a = self.a;
+                            self.a = (a << 1) | (a >> 7);
+                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x80 != 0 { F_C } else { 0 });
+                        },
+                        1 => { // RRCA
+                            let a = self.a;
+                            self.a = (a >> 1) | (a << 7);
+                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x01 != 0 { F_C } else { 0 });
+                        },
+                        2 => { // RLA
+                            let a = self.a;
+                            let c = if self.f & F_C != 0 { 1 } else { 0 };
+                            self.a = (a << 1) | c;
+                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x80 != 0 { F_C } else { 0 });
+                        },
+                        3 => { // RRA
+                            let a = self.a;
+                            let c = if self.f & F_C != 0 { 0x80 } else { 0 };
+                            self.a = (a >> 1) | c;
+                            self.f = (self.f & !(F_H | F_N | F_C)) | (if a & 0x01 != 0 { F_C } else { 0 });
+                        },
+                        4 => { // DAA
+                            let mut a = self.a;
+                            let mut diff = 0;
+                            if (self.f & F_H) != 0 || (a & 0x0F) > 9 { diff += 6; }
+                            if (self.f & F_C) != 0 || a > 0x99 { diff += 0x60; self.f |= F_C; }
+                            if (self.f & F_N) != 0 { a = a.wrapping_sub(diff); } else { a = a.wrapping_add(diff); }
+                            self.a = a;
+                            self.f = (self.f & F_C) | (if a == 0 { F_Z } else { 0 }) | (if a & 0x80 != 0 { F_S } else { 0 }) | (if a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                        },
+                        5 => { self.a = !self.a; self.f |= F_H | F_N; }, // CPL
+                        6 => { self.f = (self.f & !(F_H | F_N)) | F_C; }, // SCF
+                        7 => { let c = self.f & F_C; self.f = (self.f & !(F_H | F_N | F_C)) | (if c != 0 { F_H } else { F_C }); }, // CCF
+                        _ => {}
+                    },
                     _ => {}
                 }
             },
             1 => { // LD r, r' or HALT
                 if y == 6 && z == 6 { self.pc = self.pc.wrapping_sub(1); } // HALT
-                else { self.set_r8(y, self.get_r8(z)); }
+                else { self.set_r8(y, self.get_r8(z, prefix, disp), prefix, disp); }
             },
             2 => { // ALU A, r
-                self.alu(y, self.get_r8(z));
+                self.alu(y, self.get_r8(z, prefix, disp));
             },
             3 => {
                 match z {
                     0 => { if self.check_cond(y) { self.pc = self.pop(); } }, // RET cc
                     1 => {
-                        if q == 0 { let v = self.pop(); self.set_rp2(p, v); } // POP rp2
+                        if q == 0 { let v = self.pop(); self.set_rp2(p, v, prefix); } // POP rp2
                         else {
                             match p {
                                 0 => self.pc = self.pop(), // RET
                                 1 => { // EXX
-                                    let bc = self.get_rp(0); let de = self.get_rp(1); let hl = self.get_rp(2);
-                                    self.set_rp(0, self.alt_bc); self.set_rp(1, self.alt_de); self.set_rp(2, self.alt_hl);
+                                    let bc = self.get_rp(0, 0); let de = self.get_rp(1, 0); let hl = self.get_rp(2, 0);
+                                    self.set_rp(0, self.alt_bc, 0); self.set_rp(1, self.alt_de, 0); self.set_rp(2, self.alt_hl, 0);
                                     self.alt_bc = bc; self.alt_de = de; self.alt_hl = hl;
                                 },
-                                2 => self.pc = self.get_rp(2), // JP (HL)
-                                3 => self.sp = self.get_rp(2), // LD SP, HL
+                                2 => self.pc = self.get_rp(2, prefix), // JP (HL) / JP (IX)
+                                3 => self.sp = self.get_rp(2, prefix), // LD SP, HL / LD SP, IX
                                 _ => {}
                             }
                         }
@@ -326,20 +432,33 @@ impl Emulator {
                     3 => {
                         match y {
                             0 => { let nn = self.fetch_word(); self.pc = nn; }, // JP nn
-                            2 => { let _n = self.fetch_byte(); /* OUT */ },
-                            3 => { let _n = self.fetch_byte(); /* IN */ },
+                            1 => self.execute_cb(prefix, disp), // CB prefix
+                            2 => { let n = self.fetch_byte(); self.write_port((self.a as u16) << 8 | n as u16, self.a); }, // OUT (n), A
+                            3 => { let n = self.fetch_byte(); self.a = self.read_port((self.a as u16) << 8 | n as u16); }, // IN A, (n)
+                            4 => { // EX (SP), HL/IX/IY
+                                let t = self.pop(); 
+                                let val = self.get_rp(2, prefix);
+                                self.push(val); 
+                                self.set_rp(2, t, prefix); 
+                            },
+                            5 => { let t = self.d; self.d = self.h; self.h = t; let t = self.e; self.e = self.l; self.l = t; }, // EX DE, HL
+                            6 => self.iff1 = false, // DI
+                            7 => self.iff1 = true, // EI
                             _ => {}
                         }
                     },
                     4 => { let nn = self.fetch_word(); if self.check_cond(y) { self.push(self.pc); self.pc = nn; } }, // CALL cc, nn
                     5 => {
-                        if q == 0 { self.push(self.get_rp2(p)); } // PUSH rp2
+                        if q == 0 { self.push(self.get_rp2(p, prefix)); } // PUSH rp2
                         else if p == 0 { let nn = self.fetch_word(); self.push(self.pc); self.pc = nn; } // CALL nn
                     },
                     6 => { let n = self.fetch_byte(); self.alu(y, n); }, // ALU A, n
                     7 => { self.push(self.pc); self.pc = (y as u16) * 8; }, // RST
                     _ => {}
                 }
+            },
+            4 => { // ED prefix
+                self.execute_ed();
             },
             _ => {}
         }
@@ -390,6 +509,160 @@ impl Emulator {
             f |= F_PV;
         }
         self.f = f;
+    }
+
+    fn execute_cb(&mut self, prefix: u8, _disp: i8) {
+        let mut opcode = self.fetch_byte();
+        let mut d = 0;
+        if prefix != 0 {
+            d = opcode as i8;
+            opcode = self.fetch_byte();
+        }
+
+        let x = opcode >> 6;
+        let y = (opcode >> 3) & 7;
+        let z = opcode & 7;
+        
+        let mut val = 0;
+        let mut addr = 0;
+        
+        if prefix != 0 {
+            // Calculate address
+            addr = if prefix == 0xDD { self.ix.wrapping_add(d as u16) } else { self.iy.wrapping_add(d as u16) };
+            val = self.read_byte(addr);
+            
+            // Execute on 'val'
+            let res = self.cb_op(x, y, val);
+            
+            // Write back to memory
+            self.write_byte(addr, res);
+            
+            // Undocumented: DDCB also writes result to register z_ (if z_ != 6)
+            if z != 6 {
+                self.set_r8(z, res, 0, 0);
+            }
+        } else {
+            val = self.get_r8(z, 0, 0);
+            let res = self.cb_op(x, y, val);
+            self.set_r8(z, res, 0, 0);
+        }
+    }
+
+    fn cb_op(&mut self, x: u8, y: u8, val: u8) -> u8 {
+        match x {
+            0 => { // Rotates/Shifts
+                match y {
+                    0 => { // RLC
+                        let r = (val << 1) | (val >> 7);
+                        self.f = (self.f & !F_C) | (if val & 0x80 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    1 => { // RRC
+                        let r = (val >> 1) | (val << 7);
+                        self.f = (self.f & !F_C) | (if val & 0x01 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    2 => { // RL
+                        let r = (val << 1) | (if self.f & F_C != 0 { 1 } else { 0 });
+                        self.f = (self.f & !F_C) | (if val & 0x80 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    3 => { // RR
+                        let r = (val >> 1) | (if self.f & F_C != 0 { 0x80 } else { 0 });
+                        self.f = (self.f & !F_C) | (if val & 0x01 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    4 => { // SLA
+                        let r = val << 1;
+                        self.f = (self.f & !F_C) | (if val & 0x80 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    5 => { // SRA
+                        let r = (val as i8 >> 1) as u8;
+                        self.f = (self.f & !F_C) | (if val & 0x01 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    6 => { // SLL (Undocumented)
+                        let r = (val << 1) | 1;
+                        self.f = (self.f & !F_C) | (if val & 0x80 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    7 => { // SRL
+                        let r = val >> 1;
+                        self.f = (self.f & !F_C) | (if val & 0x01 != 0 { F_C } else { 0 });
+                        r
+                    },
+                    _ => val,
+                }
+            },
+            1 => { // BIT
+                let res = val & (1 << y);
+                self.f = (self.f & !(F_Z | F_N | F_H)) | F_H | (if res == 0 { F_Z } else { 0 });
+                val // BIT doesn't change value
+            },
+            2 => val & !(1 << y), // RES
+            3 => val | (1 << y), // SET
+            _ => val
+        }
+    }
+
+    fn execute_ed(&mut self) {
+        let opcode = self.fetch_byte();
+        let x = opcode >> 6;
+        let y = (opcode >> 3) & 7;
+        let z = opcode & 7;
+        let p = y >> 1;
+        let q = y & 1;
+
+        match x {
+            1 => {
+                match z {
+                    0 => { // IN r, (C)
+                        if y != 6 {
+                            let val = self.read_port((self.b as u16) << 8 | self.c as u16);
+                            self.set_r8(y, val, 0, 0);
+                            self.f = (self.f & F_C) | (if val == 0 { F_Z } else { 0 }) | (if val & 0x80 != 0 { F_S } else { 0 });
+                        }
+                    },
+                    1 => { // OUT (C), r
+                        if y != 6 {
+                            let val = self.get_r8(y, 0, 0);
+                            self.write_port((self.b as u16) << 8 | self.c as u16, val);
+                        }
+                    },
+                    2 => { // SBC HL, rp
+                        let hl = self.get_rp(2, 0);
+                        let rp = self.get_rp(p, 0);
+                        let cy = if self.f & F_C != 0 { 1 } else { 0 };
+                        let res = hl.wrapping_sub(rp).wrapping_sub(cy);
+                        self.set_rp(2, res, 0);
+                        self.f = (self.f & !(F_N | F_H | F_C | F_Z | F_S)) | F_N |
+                                 (if res == 0 { F_Z } else { 0 }) | (if res & 0x8000 != 0 { F_S } else { 0 });
+                    },
+                    3 => { // LD (nn), rp / LD rp, (nn)
+                        let nn = self.fetch_word();
+                        if q == 0 { self.write_word(nn, self.get_rp(p, 0)); }
+                        else { let v = self.read_word(nn); self.set_rp(p, v, 0); }
+                    },
+                    7 => { // LD I, A / LD R, A etc
+                        match y {
+                            0 => { self.i = self.a; }, // LD I, A
+                            1 => { self.r = self.a; }, // LD R, A
+                            2 => { self.a = self.i; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.i == 0 { F_Z } else { 0 }) | (if self.i & 0x80 != 0 { F_S } else { 0 }); }, // LD A, I
+                            3 => { self.a = self.r; self.f = (self.f & F_C) | (if self.iff2 { F_PV } else { 0 }) | (if self.r == 0 { F_Z } else { 0 }) | (if self.r & 0x80 != 0 { F_S } else { 0 }); }, // LD A, R
+                            _ => {}
+                        }
+                    },
+                    _ => {}
+                }
+            },
+            2 => {
+                if z <= 3 && y >= 4 { // Block instructions (LDI, LDIR, etc)
+                    // Simplified implementation
+                }
+            },
+            _ => {}
+        }
     }
 
     pub fn render(&mut self) {
