@@ -117,8 +117,7 @@ impl Emulator {
                 break;
             }
 
-            let opcode = self.fetch_byte();
-            self.execute(opcode);
+            self.execute_next_opcode();
         }
     }
 
@@ -145,6 +144,11 @@ impl Emulator {
             },
             _ => {}
         }
+    }
+
+    fn execute_next_opcode(&mut self) {
+        let opcode = self.fetch_byte();
+        self.execute(opcode);
     }
 
     fn fetch_byte(&mut self) -> u8 {
@@ -181,9 +185,7 @@ impl Emulator {
     }
 
     fn write_byte(&mut self, addr: u16, val: u8) {
-        if addr >= 0x4000 { // Simple ROM protection
-            self.memory[addr as usize] = val;
-        }
+        self.memory[addr as usize] = val;
     }
 
     fn read_word(&self, addr: u16) -> u16 {
@@ -344,7 +346,10 @@ impl Emulator {
                         },
                         _ => { // JR cc, d
                             let d = self.fetch_byte() as i8;
-                            if self.check_cond(y - 4) { self.pc = (self.pc as i32 + d as i32) as u16; }
+                            let cond_idx = y - 4;
+                            if self.check_cond(cond_idx) {
+                                self.pc = (self.pc as i32 + d as i32) as u16;
+                            }
                         }
                     },
                     1 => {
@@ -529,7 +534,7 @@ impl Emulator {
             6 => { (a | val, false, false, false) }, // OR
             7 => { // CP
                 let r = a.wrapping_sub(val);
-                (a, val > a, (a & 0xF) < (val & 0xF), (a ^ val) & (a ^ r) & 0x80 != 0)
+                (r, val > a, (a & 0xF) < (val & 0xF), (a ^ val) & (a ^ r) & 0x80 != 0)
             },
             _ => (a, false, false, false),
         };
@@ -774,75 +779,85 @@ impl Emulator {
         let mut hl = (self.h as u16) << 8 | self.l as u16;
         let mut de = (self.d as u16) << 8 | self.e as u16;
         let mut bc = (self.b as u16) << 8 | self.c as u16;
-        let mut repeat = false;
+        
+        // Determine if this is a repeat instruction (LDIR, CPIR, etc)
+        let is_repeat = (y & 2) != 0;
 
-        match z {
-            0 => { // LD block
-                let val = self.read_byte(hl);
-                self.write_byte(de, val);
-                
-                if y & 1 == 0 { // Inc (LDI/LDIR)
-                    hl = hl.wrapping_add(1);
-                    de = de.wrapping_add(1);
-                } else { // Dec (LDD/LDDR)
-                    hl = hl.wrapping_sub(1);
-                    de = de.wrapping_sub(1);
-                }
-                bc = bc.wrapping_sub(1);
-                
-                self.f = (self.f & !(F_H | F_N | F_PV)) | (if bc != 0 { F_PV } else { 0 });
-                
-                if (y & 2) != 0 && bc != 0 { // Repeat (LDIR/LDDR)
-                    repeat = true;
-                }
-            },
-            1 => { // CP block
-                let val = self.read_byte(hl);
-                let res = self.a.wrapping_sub(val);
-                
-                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
-                bc = bc.wrapping_sub(1);
-                
-                let h_flag = (self.a & 0xF) < (val & 0xF);
-                self.f = (self.f & !(F_S | F_Z | F_H | F_PV | F_N)) |
-                         (if res & 0x80 != 0 { F_S } else { 0 }) |
-                         (if res == 0 { F_Z } else { 0 }) |
-                         (if h_flag { F_H } else { 0 }) |
-                         (if bc != 0 { F_PV } else { 0 }) |
-                         F_N;
-                         
-                if (y & 2) != 0 && bc != 0 && res != 0 { // Repeat (CPIR/CPDR)
-                    repeat = true;
-                }
-            },
-            2 => { // IN block (INI, INIR, IND, INDR)
-                let port = bc; // B is high, C is low
-                let val = self.read_port(port);
-                self.write_byte(hl, val);
-                
-                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
-                
-                let b = (bc >> 8) as u8;
-                let new_b = b.wrapping_sub(1);
-                bc = (new_b as u16) << 8 | (bc & 0xFF);
-                
-                self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
-                if (y & 2) != 0 && new_b != 0 { repeat = true; }
-            },
-            3 => { // OUT block (OUTI, OTIR, OUTD, OTDR)
-                let port = bc;
-                let val = self.read_byte(hl);
-                self.write_port(port, val);
-                
-                if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
-                let b = (bc >> 8) as u8;
-                let new_b = b.wrapping_sub(1);
-                bc = (new_b as u16) << 8 | (bc & 0xFF);
-                
-                self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
-                if (y & 2) != 0 && new_b != 0 { repeat = true; }
-            },
-            _ => {}
+        loop {
+            let mut repeat = false;
+
+            match z {
+                0 => { // LD block
+                    let val = self.read_byte(hl);
+                    self.write_byte(de, val);
+                    
+                    if y & 1 == 0 { // Inc (LDI/LDIR)
+                        hl = hl.wrapping_add(1);
+                        de = de.wrapping_add(1);
+                    } else { // Dec (LDD/LDDR)
+                        hl = hl.wrapping_sub(1);
+                        de = de.wrapping_sub(1);
+                    }
+                    bc = bc.wrapping_sub(1);
+                    
+                    self.f = (self.f & !(F_H | F_N | F_PV)) | (if bc != 0 { F_PV } else { 0 });
+                    
+                    if is_repeat && bc != 0 { // Repeat (LDIR/LDDR)
+                        repeat = true;
+                    }
+                },
+                1 => { // CP block
+                    let val = self.read_byte(hl);
+                    let res = self.a.wrapping_sub(val);
+                    
+                    if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                    bc = bc.wrapping_sub(1);
+                    
+                    let h_flag = (self.a & 0xF) < (val & 0xF);
+                    self.f = (self.f & !(F_S | F_Z | F_H | F_PV | F_N)) |
+                             (if res & 0x80 != 0 { F_S } else { 0 }) |
+                             (if res == 0 { F_Z } else { 0 }) |
+                             (if h_flag { F_H } else { 0 }) |
+                             (if bc != 0 { F_PV } else { 0 }) |
+                             F_N;
+                             
+                    if is_repeat && bc != 0 && res != 0 { // Repeat (CPIR/CPDR)
+                        repeat = true;
+                    }
+                },
+                2 => { // IN block (INI, INIR, IND, INDR)
+                    let port = bc; // B is high, C is low
+                    let val = self.read_port(port);
+                    self.write_byte(hl, val);
+                    
+                    if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                    
+                    let b = (bc >> 8) as u8;
+                    let new_b = b.wrapping_sub(1);
+                    bc = (new_b as u16) << 8 | (bc & 0xFF);
+                    
+                    self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
+                    if is_repeat && new_b != 0 { repeat = true; }
+                },
+                3 => { // OUT block (OUTI, OTIR, OUTD, OTDR)
+                    let port = bc;
+                    let val = self.read_byte(hl);
+                    self.write_port(port, val);
+                    
+                    if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
+                    let b = (bc >> 8) as u8;
+                    let new_b = b.wrapping_sub(1);
+                    bc = (new_b as u16) << 8 | (bc & 0xFF);
+                    
+                    self.f = (self.f & !(F_N | F_Z)) | F_N | (if new_b == 0 { F_Z } else { 0 });
+                    if is_repeat && new_b != 0 { repeat = true; }
+                },
+                _ => {}
+            }
+
+            if !repeat {
+                break;
+            }
         }
 
         self.h = (hl >> 8) as u8;
@@ -851,10 +866,6 @@ impl Emulator {
         self.e = (de & 0xFF) as u8;
         self.b = (bc >> 8) as u8;
         self.c = (bc & 0xFF) as u8;
-
-        if repeat {
-            self.pc = self.pc.wrapping_sub(2); // Re-execute instruction
-        }
     }
 
     pub fn render(&mut self) {
@@ -908,8 +919,7 @@ mod tests {
         let max_steps = 1000;
         let mut steps = 0;
         while emu.pc < end_pc && steps < max_steps {
-            let opcode = emu.fetch_byte();
-            emu.execute(opcode);
+            emu.execute_next_opcode();
             steps += 1;
         }
         emu
@@ -1152,8 +1162,7 @@ mod tests {
         emu.b = 0x20; emu.c = 0x00;
         emu.memory[0] = 0x09; // ADD HL, BC
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.h, 0x30);
         assert_eq!(emu.f & F_N, 0);
 
@@ -1165,8 +1174,7 @@ mod tests {
         emu.memory[0] = 0xED;
         emu.memory[1] = 0x5A;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.h, 0x20); assert_eq!(emu.l, 0x01);
 
         // SBC HL, BC (No Carry)
@@ -1177,8 +1185,7 @@ mod tests {
         emu.memory[0] = 0xED;
         emu.memory[1] = 0x42;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.h, 0x20);
         assert_ne!(emu.f & F_N, 0);
     }
@@ -1193,8 +1200,7 @@ mod tests {
         emu.memory[0] = 0xCB;
         emu.memory[1] = 0x00;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.b, 0x03); // 00000011 (Rotate Left Circular, bit 7 goes to 0 and C)
         assert_ne!(emu.f & F_C, 0);
 
@@ -1204,8 +1210,7 @@ mod tests {
         emu.memory[0] = 0xCB;
         emu.memory[1] = 0x21;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.c, 0x02);
 
         // SRA D (Arithmetic right shift, preserves sign)
@@ -1214,8 +1219,7 @@ mod tests {
         emu.memory[0] = 0xCB;
         emu.memory[1] = 0x2A;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.d, 0xC2); // 11000010
     }
 
@@ -1234,8 +1238,7 @@ mod tests {
         emu.memory[0] = 0xED;
         emu.memory[1] = 0xA1;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         
         assert_eq!(emu.h, 0x80); assert_eq!(emu.l, 0x01); // HL inc
         assert_eq!(emu.c, 0x01); // BC dec
@@ -1251,8 +1254,7 @@ mod tests {
         emu.h = 3; emu.l = 4;
         emu.memory[0] = 0xEB;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.d, 3); assert_eq!(emu.e, 4);
         assert_eq!(emu.h, 1); assert_eq!(emu.l, 2);
 
@@ -1260,14 +1262,12 @@ mod tests {
         emu.a = 0xAA; emu.f = 0xF0;
         emu.memory[0] = 0x08;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.a, 0); // Assuming alt_af initialized to 0
         emu.a = 0x55;
         emu.memory[0] = 0x08;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.a, 0xAA);
         assert_eq!(emu.f, 0xF0);
     }
@@ -1284,8 +1284,7 @@ mod tests {
         emu.memory[0] = 0xD3;
         emu.memory[1] = 0xFE;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.border_color, 7);
 
         // IN A, (n)
@@ -1293,8 +1292,7 @@ mod tests {
         emu.memory[0] = 0xDB;
         emu.memory[1] = 0xFE;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.a, 0xFF); // Mock returns 0xFF
     }
 
@@ -1306,16 +1304,14 @@ mod tests {
         emu.memory[0] = 0xED;
         emu.memory[1] = 0x56;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.im, 1);
         
         // ED 5E: IM 2
         emu.memory[0] = 0xED;
         emu.memory[1] = 0x5E;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.im, 2);
     }
 
@@ -1341,8 +1337,7 @@ mod tests {
                 emu.memory[0] = opcode;
                 emu.pc = 0;
                 
-                let op = emu.fetch_byte();
-                emu.execute(op);
+                emu.execute_next_opcode();
                 
                 let res = match dest {
                     0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1367,8 +1362,7 @@ mod tests {
             emu.memory[0] = opcode;
             emu.pc = 0;
             
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             
             let res = match dest {
                 0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1399,8 +1393,7 @@ mod tests {
             emu.memory[0] = opcode;
             emu.pc = 0;
             
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             
             let expected = match src {
                 0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1414,8 +1407,7 @@ mod tests {
         emu.memory[0] = 0x36; // LD (HL), n
         emu.memory[1] = 0x99;
         emu.pc = 0;
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert_eq!(emu.memory[0x8000], 0x99);
     }
 
@@ -1435,8 +1427,7 @@ mod tests {
             let opcode = 0x80 | src;
             emu.memory[0] = opcode;
             emu.pc = 0;
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             if src == 7 { assert_eq!(emu.a, 40); } else { assert_eq!(emu.a, 30); }
             
             // SUB r
@@ -1448,8 +1439,7 @@ mod tests {
             let opcode = 0x90 | src;
             emu.memory[0] = opcode;
             emu.pc = 0;
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             if src == 7 { assert_eq!(emu.a, 0); } else { assert_eq!(emu.a, 10); }
         }
     }
@@ -1468,8 +1458,7 @@ mod tests {
             let opcode = 0x04 | (r << 3);
             emu.memory[0] = opcode;
             emu.pc = 0;
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             
             let res = match r {
                 0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1481,8 +1470,7 @@ mod tests {
             let opcode = 0x05 | (r << 3);
             emu.memory[0] = opcode;
             emu.pc = 0;
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             
             let res = match r {
                 0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1502,8 +1490,7 @@ mod tests {
             emu.memory[0] = opcode;
             emu.memory[1] = 0x77;
             emu.pc = 0;
-            let op = emu.fetch_byte();
-            emu.execute(op);
+            emu.execute_next_opcode();
             
             let res = match r {
                 0 => emu.b, 1 => emu.c, 2 => emu.d, 3 => emu.e,
@@ -1537,14 +1524,12 @@ mod tests {
         emu.sp = 0; // Top of RAM
         
         // Step 1: Execute EI
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert!(emu.iff1);
         assert!(!emu.halted);
         
         // Step 2: Execute HALT
-        let op = emu.fetch_byte();
-        emu.execute(op);
+        emu.execute_next_opcode();
         assert!(emu.halted);
         assert_eq!(emu.pc, 1); // Points to HALT
         
@@ -1560,9 +1545,377 @@ mod tests {
         assert_eq!(ret_addr, 2); // Should return to instruction after HALT
         
         // Run ISR and return
-        for _ in 0..3 { let op = emu.fetch_byte(); emu.execute(op); }
+        for _ in 0..3 { emu.execute_next_opcode(); }
         
         assert_eq!(emu.pc, 2);
         assert_eq!(emu.a, 0xFF);
+    }
+
+    #[test]
+    fn test_cb_opcodes_from_list() {
+        let mut emu = Emulator::new();
+        
+        // === RLC B (CB 00) ===
+        // Case 1: Bit 7 is 1, non-zero result
+        emu.b = 0x85; // 10000101
+        emu.f = 0; // Clear flags
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x00; // RLC B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.b, 0x0B, "RLC B: Case 1 failed (value)"); // 00001011
+        assert_ne!(emu.f & F_C, 0, "RLC B: Case 1 failed (carry)");
+
+        // Case 2: Bit 7 is 0, non-zero result
+        emu.b = 0x7F; // 01111111
+        emu.f = F_C; // Set carry to ensure it's cleared
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x00; // RLC B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.b, 0xFE, "RLC B: Case 2 failed (value)"); // 11111110
+        assert_eq!(emu.f & F_C, 0, "RLC B: Case 2 failed (carry)");
+
+        // === RRC C (CB 09) ===
+        // Case 1: Bit 0 is 1
+        emu.c = 0x85; // 10000101
+        emu.f = 0; // Clear flags
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x09; // RRC C
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.c, 0xC2, "RRC C: Case 1 failed (value)"); // 11000010
+        assert_ne!(emu.f & F_C, 0, "RRC C: Case 1 failed (carry)");
+        
+        // === BIT 7, H (CB 7C) ===
+        // Case 1: Test bit 7 of 0x80 (should be 1)
+        emu.h = 0x80;
+        emu.f = F_Z | F_C; // Set Z and C to see if they are affected
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x7C; // BIT 7, H
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.h, 0x80, "BIT: Register should not change");
+        assert_eq!(emu.f & F_Z, 0, "BIT: Z flag should be 0 when bit is 1");
+        assert_ne!(emu.f & F_H, 0, "BIT: H flag should be 1");
+        assert_ne!(emu.f & F_C, 0, "BIT: C flag should not be affected");
+
+        // Case 2: Test bit 0 of 0x80 (should be 0) -> BIT 0, H (CB 44)
+        emu.h = 0x80;
+        emu.f = F_C; // Set C
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x44; // BIT 0, H
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_ne!(emu.f & F_Z, 0, "BIT: Z flag should be 1 when bit is 0");
+        assert_ne!(emu.f & F_H, 0, "BIT: H flag should be 1");
+        assert_ne!(emu.f & F_C, 0, "BIT: C flag should not be affected");
+
+        // === RES 5, L (CB AD) ===
+        emu.l = 0xFF; // 11111111
+        emu.f = 0x55; // Arbitrary flags to check they are not affected
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0xAD; // RES 5, L
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.l, 0b11011111, "RES failed");
+        assert_eq!(emu.f, 0x55, "RES should not affect flags");
+
+        // === SET 2, A (CB D7) ===
+        emu.a = 0x00;
+        emu.f = 0xAA; // Arbitrary flags
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0xD7; // SET 2, A
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 0b00000100, "SET failed");
+        assert_eq!(emu.f, 0xAA, "SET should not affect flags");
+
+        // === SLA B (CB 20) ===
+        emu.b = 0x81; // 10000001
+        emu.f = 0;
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x20; // SLA B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.b, 0x02, "SLA failed (value)"); // 00000010
+        assert_ne!(emu.f & F_C, 0, "SLA failed (carry)");
+
+        // === SRA D (CB 2A) ===
+        emu.d = 0x81; // 10000001
+        emu.f = 0;
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x2A; // SRA D
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.d, 0xC0, "SRA failed (value)"); // 11000000
+        assert_ne!(emu.f & F_C, 0, "SRA failed (carry)");
+
+        // === SRL E (CB 3B) ===
+        emu.e = 0x81; // 10000001
+        emu.f = 0;
+        emu.memory[0] = 0xCB;
+        emu.memory[1] = 0x3B; // SRL E
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.e, 0x40, "SRL failed (value)"); // 01000000
+        assert_ne!(emu.f & F_C, 0, "SRL failed (carry)");
+    }
+
+    #[test]
+    fn test_more_alu_ops() {
+        let mut emu = Emulator::new();
+        
+        // --- ADC A, B (88) ---
+        // Case 1: No carry in
+        emu.a = 10; emu.b = 20; emu.f = 0;
+        emu.memory[0] = 0x88; // ADC A, B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 30, "ADC no carry");
+
+        // Case 2: With carry in
+        emu.a = 10; emu.b = 20; emu.f = F_C;
+        emu.memory[0] = 0x88; // ADC A, B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 31, "ADC with carry");
+
+        // --- SBC A, C (99) ---
+        // Case 1: No carry in
+        emu.a = 30; emu.c = 10; emu.f = 0;
+        emu.memory[0] = 0x99; // SBC A, C
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 20, "SBC no carry");
+
+        // Case 2: With carry in
+        emu.a = 30; emu.c = 10; emu.f = F_C;
+        emu.memory[0] = 0x99; // SBC A, C
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 19, "SBC with carry");
+
+        // --- AND D (A2) ---
+        emu.a = 0b11001100; emu.d = 0b10101010;
+        emu.memory[0] = 0xA2; // AND D
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 0b10001000);
+        assert_ne!(emu.f & F_H, 0, "AND should set H flag");
+
+        // --- OR E (B3) ---
+        emu.a = 0b11001100; emu.e = 0b10101010;
+        emu.memory[0] = 0xB3; // OR E
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 0b11101110);
+
+        // --- XOR H (AC) ---
+        emu.a = 0b11001100; emu.h = 0b10101010;
+        emu.memory[0] = 0xAC; // XOR H
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 0b01100110);
+
+        // --- CP L (BD) ---
+        // Case 1: A > L
+        emu.a = 20; emu.l = 10; emu.f = 0;
+        emu.memory[0] = 0xBD; // CP L
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 20, "CP should not change A");
+        assert_eq!(emu.f & (F_Z | F_C), 0, "CP A>L: Z=0, C=0");
+
+        // Case 2: A == L
+        emu.a = 20; emu.l = 20; emu.f = 0;
+        emu.memory[0] = 0xBD; // CP L
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 20, "CP should not change A");
+        assert_eq!(emu.f & (F_Z | F_C), F_Z, "CP A==L: Z=1, C=0");
+        
+        // Case 3: A < L
+        emu.a = 10; emu.l = 20; emu.f = 0;
+        emu.memory[0] = 0xBD; // CP L
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 10, "CP should not change A");
+        assert_eq!(emu.f & (F_Z | F_C), F_C, "CP A<L: Z=0, C=1");
+    }
+
+    #[test]
+    fn test_conditional_jumps() {
+        let mut emu = Emulator::new();
+        
+        // --- JR Z, d (28) ---
+        // Case 1: Z=1, jump taken
+        // SUB A (97) sets Z=1, JR Z, 2
+        let code1 = [0x97, 0x28, 0x02, 0x3E, 0xAA, 0x3E, 0xBB]; // SUB A; JR Z, 2; LD A, AA; LD A, BB
+        let emu1 = run_test(&code1);
+        assert_eq!(emu1.a, 0xBB, "JR Z should be taken when Z=1");
+        
+        // Case 2: Z=0, jump not taken
+        // LD A, 1 (3E 01), SUB B (90, B=0) -> Z=0, C=0, S=0. JR Z, -5 (backwards jump)
+        let code2 = [0x3E, 0x01, 0x90, 0x28, 0xFB, 0x3E, 0xAA]; // LD A, 1; SUB B; JR Z, -5; LD A, AA
+        let emu2 = run_test(&code2);
+        assert_eq!(emu2.a, 0xAA, "JR Z should not be taken when Z=0");
+
+        // --- JR C, d (38) ---
+        // Case 1: C=1, jump taken
+        // SCF (37) sets C=1. JR C, 2
+        let code3 = [0x37, 0x38, 0x02, 0x3E, 0xAA, 0x3E, 0xBB];
+        let emu3 = run_test(&code3);
+        assert_eq!(emu3.a, 0xBB, "JR C should be taken when C=1");
+
+        // Case 2: C=0, jump not taken
+        // OR A (B7) resets C=0. JR C, -5 (backwards jump)
+        let code4 = [0xB7, 0x38, 0xFB, 0x3E, 0xAA]; // OR A; JR C, -5; LD A, AA
+        let emu4 = run_test(&code4);
+        assert_eq!(emu4.a, 0xAA, "JR C should not be taken when C=0");
+    }
+
+    #[test]
+    fn test_conditional_calls_jumps_rets() {
+        let mut emu = Emulator::new();
+
+        // --- JP Z, nn (CA) ---
+        // Case 1: Z=1, jump taken
+        emu.memory.fill(0);
+        emu.a = 0; emu.f = F_Z; emu.pc = 0;
+        emu.memory[0] = 0xCA; emu.memory[1] = 0x00; emu.memory[2] = 0x80; // JP Z, 0x8000
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 0x8000, "JP Z should be taken when Z=1");
+
+        // Case 2: Z=0, jump not taken
+        emu.a = 1; emu.f = 0; emu.pc = 0;
+        emu.memory[0] = 0xCA; emu.memory[1] = 0x00; emu.memory[2] = 0x80; // JP Z, 0x8000
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 3, "JP Z should not be taken when Z=0");
+
+        // --- CALL C, nn (DC) ---
+        // Case 1: C=1, call taken
+        emu.memory.fill(0);
+        emu.f = F_C; emu.pc = 0; emu.sp = 0xFFFF;
+        emu.memory[0] = 0xDC; emu.memory[1] = 0x00; emu.memory[2] = 0x80; // CALL C, 0x8000
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 0x8000, "CALL C should be taken when C=1");
+        assert_eq!(emu.sp, 0xFFFF - 2, "CALL C should push PC to stack");
+        assert_eq!(emu.read_word(emu.sp), 3, "CALL C should push correct return address");
+
+        // Case 2: C=0, call not taken
+        emu.f = 0; emu.pc = 0; emu.sp = 0xFFFF;
+        emu.memory[0] = 0xDC; emu.memory[1] = 0x00; emu.memory[2] = 0x80; // CALL C, 0x8000
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 3, "CALL C should not be taken when C=0");
+        assert_eq!(emu.sp, 0xFFFF, "CALL C should not touch stack when not taken");
+
+        // --- RET NZ (C0) ---
+        // Case 1: Z=0, return taken
+        emu.memory.fill(0);
+        emu.f = 0; // Z is 0
+        emu.sp = 0xFFFD;
+        emu.write_word(emu.sp, 0x1234); // Push return address
+        emu.memory[0] = 0xC0; // RET NZ
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 0x1234, "RET NZ should be taken when Z=0");
+        assert_eq!(emu.sp, 0xFFFD + 2, "RET NZ should pop from stack");
+
+        // Case 2: Z=1, return not taken
+        emu.f = F_Z; // Z is 1
+        emu.sp = 0xFFFD;
+        emu.write_word(emu.sp, 0x1234);
+        emu.memory[0] = 0xC0; // RET NZ
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 1, "RET NZ should not be taken when Z=1");
+        assert_eq!(emu.sp, 0xFFFD, "RET NZ should not touch stack when not taken");
+    }
+
+    #[test]
+    fn test_indexed_arithmetic_and_io() {
+        let mut emu = Emulator::new();
+
+        // --- ADD IX, BC (DD 09) ---
+        emu.ix = 0x1000;
+        emu.b = 0x01; emu.c = 0x23;
+        emu.memory[0] = 0xDD; emu.memory[1] = 0x09; // ADD IX, BC
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.ix, 0x1123, "ADD IX, BC failed");
+
+        // --- IN B, (C) (ED 40) ---
+        // Mock `read_port` returns 0xFF for even ports.
+        emu.b = 0; emu.c = 0xFE; // Port B*256 + C = xxFE (even)
+        emu.memory[0] = 0xED; emu.memory[1] = 0x40; // IN B, (C)
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.b, 0xFF, "IN B, (C) failed");
+        assert_ne!(emu.f & F_S, 0, "IN B, (C) should set S flag for result FF");
+        assert_eq!(emu.f & F_Z, 0, "IN B, (C) should not set Z flag for result FF");
+
+        // --- OUT (C), B (ED 41) ---
+        // Mock `write_port` sets border color on even ports
+        emu.border_color = 0;
+        emu.b = 5; // Cyan
+        emu.c = 0xFE; // Port B*256 + C = xxFE (even)
+        emu.memory[0] = 0xED; emu.memory[1] = 0x41; // OUT (C), B
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.border_color, 5, "OUT (C), B failed to set border color");
+    }
+
+    #[test]
+    fn test_more_block_and_rotate_ops() {
+        let mut emu = Emulator::new();
+
+        // --- LDD (ED A8) ---
+        emu.memory.fill(0);
+        emu.memory[0x1001] = 0xAB;
+        emu.h = 0x10; emu.l = 0x01; // HL = 0x1001
+        emu.d = 0x20; emu.e = 0x02; // DE = 0x2002
+        emu.b = 0x00; emu.c = 0x01; // BC = 1
+        emu.memory[0] = 0xED; emu.memory[1] = 0xA8; // LDD
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.memory[0x2002], 0xAB, "LDD: Data not copied");
+        assert_eq!((emu.h as u16) << 8 | emu.l as u16, 0x1000, "LDD: HL not decremented");
+        assert_eq!((emu.d as u16) << 8 | emu.e as u16, 0x2001, "LDD: DE not decremented");
+        assert_eq!((emu.b as u16) << 8 | emu.c as u16, 0x0000, "LDD: BC not decremented");
+        assert_eq!(emu.f & F_PV, 0, "LDD: PV flag should be reset as BC->0");
+
+        // --- CPIR (ED B1) ---
+        emu.memory.fill(0);
+        emu.a = 0x55;
+        emu.memory[0x1000] = 0x11; emu.memory[0x1001] = 0x22; emu.memory[0x1002] = 0x55;
+        emu.h = 0x10; emu.l = 0x00; // HL = 0x1000
+        emu.b = 0x00; emu.c = 0x05; // BC = 5
+        emu.memory[0] = 0xED; emu.memory[1] = 0xB1; // CPIR
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!((emu.b as u16) << 8 | emu.c as u16, 2, "CPIR: BC should be 2");
+        assert_ne!(emu.f & F_Z, 0, "CPIR: Z flag should be set on match");
+        assert_ne!(emu.f & F_PV, 0, "CPIR: PV flag should be set as BC is not 0");
+
+        // --- RLD (ED 6F) ---
+        emu.memory.fill(0);
+        emu.a = 0x12;
+        emu.h = 0x80; emu.l = 0x00;
+        emu.memory[0x8000] = 0x34;
+        emu.memory[0] = 0xED; emu.memory[1] = 0x6F; // RLD
+        emu.pc = 0;
+        emu.execute_next_opcode();
+        assert_eq!(emu.a, 0x13, "RLD: A register incorrect");
+        assert_eq!(emu.memory[0x8000], 0x42, "RLD: Memory at (HL) incorrect");
+        
+        // --- RST 18h (DF) ---
+        emu.memory.fill(0);
+        emu.pc = 0x1000;
+        emu.sp = 0xFFFF;
+        emu.memory[0x1000] = 0xDF; // RST 18h
+        emu.execute_next_opcode();
+        assert_eq!(emu.pc, 0x0018, "RST should jump to correct vector");
+        assert_eq!(emu.read_word(emu.sp), 0x1001, "RST should push return address");
     }
 }
