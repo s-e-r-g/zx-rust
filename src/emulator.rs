@@ -104,6 +104,94 @@ impl Emulator {
         }
     }
 
+    pub fn load_tap(&mut self, filename: &str) -> Result<(), String> {
+        let tap_bytes = match std::fs::read(filename) {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(format!("Could not read file {}: {}", filename, e)),
+        };
+
+        let mut i = 0;
+        // First pass: look for a standard CODE block with a header
+        while i < tap_bytes.len() {
+            if i + 2 > tap_bytes.len() { break; }
+            let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+            i += 2;
+            
+            if i + block_len > tap_bytes.len() { break; }
+            let block = &tap_bytes[i..i + block_len];
+            i += block_len;
+
+            if block_len > 18 && block[0] == 0x00 && block[1] == 3 { // Header, Type 3: Code
+                let data_len_in_header = u16::from_le_bytes([block[12], block[13]]);
+                let start_address = u16::from_le_bytes([block[14], block[15]]);
+                
+                if i >= tap_bytes.len() { continue; }
+
+                if i + 2 > tap_bytes.len() { break; }
+                let data_block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+                
+                if i + 2 + data_block_len > tap_bytes.len() { break; }
+                let data_block = &tap_bytes[i + 2 .. i + 2 + data_block_len];
+
+                if !data_block.is_empty() && data_block[0] == 0xFF {
+                    let code_data = &data_block[1..data_block.len() - 1];
+                    if code_data.len() != data_len_in_header as usize {
+                        println!("Warning: TAP block header length ({}) differs from actual data length ({}).", data_len_in_header, code_data.len());
+                    }
+                    
+                    println!("Loading {} bytes to 0x{:04X}", code_data.len(), start_address);
+                    for (offset, byte) in code_data.iter().enumerate() {
+                        self.write_byte(start_address + offset as u16, *byte);
+                    }
+                    
+                    let di_halt = [0xF3, 0x76];
+                    self.write_byte(0x5B00, di_halt[0]);
+                    self.write_byte(0x5B01, di_halt[1]);
+                    self.pc = 0x5B00;
+                    self.iff1 = false;
+                    self.iff2 = false;
+                    self.halted = false;
+
+                    return Ok(());
+                }
+            }
+        }
+        
+        // Second pass: if no code block was found, look for a raw screen dump
+        i = 0;
+        while i < tap_bytes.len() {
+            if i + 2 > tap_bytes.len() { break; }
+            let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+            i += 2;
+            
+            if i + block_len > tap_bytes.len() { break; }
+            let block = &tap_bytes[i..i + block_len];
+            i += block_len;
+
+            if block_len > 2 && block[0] == 0xFF { // Data block
+                let data = &block[1..block.len()-1];
+                if data.len() == 6912 {
+                    println!("Detected screen data (6912 bytes). Loading to 0x4000.");
+                    for (offset, byte) in data.iter().enumerate() {
+                        self.write_byte(0x4000 + offset as u16, *byte);
+                    }
+
+                    let di_halt = [0xF3, 0x76];
+                    self.write_byte(0x5B00, di_halt[0]);
+                    self.write_byte(0x5B01, di_halt[1]);
+                    self.pc = 0x5B00;
+                    self.iff1 = false;
+                    self.iff2 = false;
+                    self.halted = false;
+                    
+                    return Ok(());
+                }
+            }
+        }
+
+        Err("No CODE or 6912-byte data block found in tap file.".to_string())
+    }
+
     pub fn step(&mut self) {
         // Simulate 50Hz interrupt at the start of the frame
         if self.iff1 {
@@ -443,17 +531,36 @@ impl Emulator {
                             self.f = (self.f & !(F_H | F_N | F_C | F_PV)) | (if a & 0x01 != 0 { F_C } else { 0 }) | pv;
                         },
                         4 => { // DAA
-                            let mut a = self.a;
-                            let mut diff = 0;
-                            if (self.f & F_H) != 0 || (a & 0x0F) > 9 { diff += 6; }
-                            if (self.f & F_C) != 0 || a > 0x99 { diff += 0x60; self.f |= F_C; }
-                            if (self.f & F_N) != 0 { a = a.wrapping_sub(diff); } else { a = a.wrapping_add(diff); }
+                            let old_a = self.a;
+                            let old_f = self.f;
+                            let mut adjust = 0u8;
+                            let mut c_flag = old_f & F_C;
+
+                            if (old_f & F_H) != 0 || (old_a & 0x0F) > 9 {
+                                adjust |= 0x06;
+                            }
+
+                            if (old_f & F_C) != 0 || old_a > 0x99 {
+                                adjust |= 0x60;
+                                c_flag = F_C;
+                            }
+                            
+                            let a = if (old_f & F_N) == 0 {
+                                old_a.wrapping_add(adjust)
+                            } else {
+                                old_a.wrapping_sub(adjust)
+                            };
+                            
                             self.a = a;
-                            self.f = (self.f & F_C) | (if a == 0 { F_Z } else { 0 }) | (if a & 0x80 != 0 { F_S } else { 0 }) | (if a.count_ones() % 2 == 0 { F_PV } else { 0 });
+                            self.f = c_flag | (old_f & F_N);
+                            self.f |= if a == 0 { F_Z } else { 0 };
+                            self.f |= a & F_S;
+                            self.f |= if a.count_ones() % 2 == 0 { F_PV } else { 0 };
+                            self.f |= (old_a ^ a) & F_H;
                         },
                         5 => { self.a = !self.a; self.f |= F_H | F_N; }, // CPL
-                        6 => { self.f = (self.f & !(F_H | F_N)) | F_C; }, // SCF
-                        7 => { let c = self.f & F_C; self.f = (self.f & !(F_H | F_N | F_C)) | (if c != 0 { F_H } else { F_C }); }, // CCF
+                        6 => { self.f = (self.f & (F_S | F_Z | F_PV)) | F_C; }, // SCF
+                        7 => { let c = self.f & F_C; self.f = (self.f & (F_S | F_Z | F_PV)) | (if c != 0 { F_H } else { F_C }); }, // CCF
                         _ => {}
                     },
                     _ => {}
@@ -578,13 +685,10 @@ impl Emulator {
         let y = (opcode >> 3) & 7;
         let z = opcode & 7;
         
-        let mut val = 0;
-        let mut addr = 0;
-        
         if prefix != 0 {
             // Calculate address
-            addr = if prefix == 0xDD { self.ix.wrapping_add(d as u16) } else { self.iy.wrapping_add(d as u16) };
-            val = self.read_byte(addr);
+            let addr = if prefix == 0xDD { self.ix.wrapping_add(d as u16) } else { self.iy.wrapping_add(d as u16) };
+            let val = self.read_byte(addr);
             
             // Execute on 'val'
             let res = self.cb_op(x, y, val);
@@ -597,7 +701,7 @@ impl Emulator {
                 self.set_r8(z, res, 0, 0);
             }
         } else {
-            val = self.get_r8(z, 0, 0);
+            let val = self.get_r8(z, 0, 0);
             let res = self.cb_op(x, y, val);
             self.set_r8(z, res, 0, 0);
         }
@@ -1178,6 +1282,13 @@ mod tests {
         let emu = run_test(&[0x3E, 0x99, 0x06, 0x01, 0x80, 0x27]);
         assert_eq!(emu.a, 0x00);
         assert_ne!(emu.f & F_C, 0);
+
+        // 3. Subtraction: 0x40 - 0x31 = 0x0F -> DAA -> 0x09
+        let emu = run_test(&[0x3E, 0x40, 0x06, 0x31, 0x90, 0x27]); // LD A, 0x40; LD B, 0x31; SUB B; DAA
+        assert_eq!(emu.a, 0x09);
+        assert_eq!(emu.f & (F_S | F_Z | F_H | F_C), 0);
+        assert_ne!(emu.f & F_N, 0);
+        assert_ne!(emu.f & F_PV, 0);
     }
 
     #[test]

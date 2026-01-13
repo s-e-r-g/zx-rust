@@ -21,8 +21,12 @@ struct MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
+        let mut emu = Emulator::new();
+        if let Err(e) = emu.load_tap("test.tap") {
+            println!("Error loading tap file: {}", e);
+        }
         Self {
-            emulator: Emulator::new(),
+            emulator: emu,
             last_frame_time: std::time::Instant::now(),
         }
     }
