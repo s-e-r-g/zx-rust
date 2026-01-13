@@ -1894,7 +1894,7 @@ mod tests {
 
     #[test]
     fn test_conditional_jumps() {
-        let mut emu = Emulator::new();
+        let emu = Emulator::new();
         
         // --- JR Z, d (28) ---
         // Case 1: Z=1, jump taken
