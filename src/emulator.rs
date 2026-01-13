@@ -50,7 +50,7 @@ pub struct Emulator {
     pub im: u8,
     pub alt_af: u16, pub alt_bc: u16, pub alt_de: u16, pub alt_hl: u16,
     pub halted: bool,
-    pub test_mode: bool, // Disable ROM protection during tests
+    pub rom_writable: bool, // Disable ROM protection during tests
 }
 
 impl Emulator {
@@ -66,7 +66,7 @@ impl Emulator {
             iff1: true, iff2: true, im: 1, // Interrupts enabled for ROM
             alt_af: 0, alt_bc: 0, alt_de: 0, alt_hl: 0,
             halted: false,
-            test_mode: false,
+            rom_writable: false,
         };
         emu.load_rom(); // Завантаж ROM
         emu
@@ -81,6 +81,7 @@ impl Emulator {
             if rom.len() == 16384 {
                     self.memory[..16384].copy_from_slice(&rom);
                     loaded = true;
+                    self.rom_writable = false;
             } else {
                 println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
             }
@@ -277,7 +278,7 @@ impl Emulator {
 
     fn write_byte(&mut self, addr: u16, val: u8) {
         // ROM protection: prevent writes to 0x0000-0x3FFF unless in test mode
-        if !self.test_mode && addr < 0x4000 {
+        if !self.rom_writable && addr < 0x4000 {
             return; // Silently ignore writes to ROM
         }
         self.memory[addr as usize] = val;
@@ -1045,7 +1046,7 @@ mod tests {
 
     fn run_test(code: &[u8]) -> Emulator {
         let mut emu = Emulator::new();
-        emu.test_mode = true; // Allow writes to ROM area during tests
+        emu.rom_writable = true; // Allow writes to ROM area during tests
         // Clear memory and load code at 0x0000
         emu.memory.fill(0);
         for (i, &b) in code.iter().enumerate() {
@@ -2016,7 +2017,7 @@ mod tests {
     #[test]
     fn test_more_block_and_rotate_ops() {
         let mut emu = Emulator::new();
-        emu.test_mode = true;
+        emu.rom_writable = true;
 
         // --- LDD (ED A8) ---
         emu.memory.fill(0);
@@ -2071,7 +2072,7 @@ mod tests {
     fn test_screen_memory_rendering() {
         // Test that writing to screen memory gets rendered correctly
         let mut emu = Emulator::new();
-        emu.test_mode = true;
+        emu.rom_writable = true;
         emu.memory.fill(0);
         
         // Fill first character position with a pattern (0xFF = all pixels on)
