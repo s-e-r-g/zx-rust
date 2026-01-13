@@ -1,3 +1,15 @@
+//! ZX Spectrum Emulator - Z80 CPU and System Emulation
+//!
+//! This module implements a complete ZX Spectrum 48K emulator with:
+//! - Z80 CPU emulation (full instruction set)
+//! - 48KB RAM and 16KB ROM
+//! - Interrupt timing (50Hz frame interrupts)
+//! - Display memory mapping
+//! - Keyboard input and port I/O
+//!
+//! The emulator executes ~10,000 instructions per frame to maintain
+//! responsiveness while accurately simulating the 3.5MHz Z80 processor.
+
 const SCREEN_WIDTH: usize = 256;
 const SCREEN_HEIGHT: usize = 192;
 const BORDER_H: usize = 32;
@@ -24,14 +36,232 @@ const PALETTE: [[u8; 4]; 16] = [
     [0xFF, 0xFF, 0xFF, 0xFF], // 15: Bright White
 ];
 
-const F_S: u8 = 0x80;
-const F_Z: u8 = 0x40;
-const F_5: u8 = 0x20;
-const F_H: u8 = 0x10;
-const F_3: u8 = 0x08;
-const F_PV: u8 = 0x04;
-const F_N: u8 = 0x02;
-const F_C: u8 = 0x01;
+// Z80 CPU Flag register bits
+const F_S: u8 = 0x80;   // Sign flag
+const F_Z: u8 = 0x40;   // Zero flag
+const F_H: u8 = 0x10;   // Half-carry flag
+const F_PV: u8 = 0x04;  // Parity/Overflow flag
+const F_N: u8 = 0x02;   // Subtract flag
+const F_C: u8 = 0x01;   // Carry flag
+
+pub trait Memory {
+    fn read_byte(&self, addr: u16) -> u8;
+    fn write_byte(&mut self, addr: u16, val: u8);
+}
+
+pub trait Screen {
+    fn get_border_left_width(&self) -> u8;
+    fn get_border_right_width(&self) -> u8;
+    fn get_border_top_height(&self) -> u8;
+    fn get_border_bottom_height(&self) -> u8;
+    fn get_screen_width(&self) -> u8;
+    fn get_screen_height(&self) -> u8;
+}
+
+pub trait Ports {
+    fn read_port(&self, port: u16) -> u8;
+    fn write_port(&mut self, port: u16, val: u8);
+}
+
+pub struct Z80 {
+    pub a: u8,
+    pub f: u8,
+    
+    pub b: u8, 
+    pub c: u8,
+    
+    pub d: u8, 
+    pub e: u8,
+    
+    pub h: u8, 
+    pub l: u8,
+    
+    pub a_alt: u8, 
+    pub f_alt: u8,
+    
+    pub b_alt: u8, 
+    pub c_alt: u8,
+    
+    pub d_alt: u8, 
+    pub e_alt: u8,
+    
+    pub h_alt: u8, 
+    pub l_alt: u8,
+
+    pub sp: u16,
+    pub pc: u16,
+    
+    pub ix: u16, 
+    pub iy: u16,
+    
+    pub i: u8, 
+    pub r: u8,
+    
+    pub iff1: bool, 
+    pub iff2: bool,
+
+    pub im: u8,
+}
+
+impl Z80 {
+    pub fn new() -> Self {
+        Self {
+            a: 0, f: 0,
+            b: 0, c: 0,
+            d: 0, e: 0,
+            h: 0, l: 0,
+            a_alt: 0, f_alt: 0,
+            b_alt: 0, c_alt: 0,
+            d_alt: 0, e_alt: 0,
+            h_alt: 0, l_alt: 0,
+            sp: 0,
+            pc: 0,
+            ix: 0, iy: 0,
+            i: 0, r: 0,
+            iff1: true, 
+            iff2: true,
+            im: 1,
+        }
+    }
+
+    pub fn exec_next_command<B: Memory + Ports>(&mut self, bus: &mut B){
+        
+    }    
+
+    pub fn reset(&mut self){
+        // Reset CPU state
+        self.a = 0; 
+        self.f = 0;
+        
+        self.b = 0; 
+        self.c = 0; 
+        
+        self.d = 0; 
+        self.e = 0;
+        
+        self.h = 0; 
+        self.l = 0;
+        
+        self.a_alt = 0; 
+        self.f_alt = 0;
+        
+        self.b_alt = 0; 
+        self.c_alt = 0;
+        
+        self.d_alt = 0; 
+        self.e_alt = 0;
+        
+        self.h_alt = 0; 
+        self.l_alt = 0;
+
+        self.sp = 0; 
+        self.pc = 0;
+        
+        self.ix = 0; 
+        self.iy = 0;
+        
+        self.i = 0; 
+        self.r = 0;
+        
+        self.iff1 = true; 
+        self.iff2 = true;
+        
+        self.im = 1;
+    }
+}
+
+
+struct MachineZxSpectrum48 {
+    screen_buffer: Vec<u8>,
+    border_color: u8,
+    ram48k: [u8; 0xC000],
+    rom16k: [u8; 0x4000],
+    z80: Z80,
+}
+
+
+impl Memory for MachineZxSpectrum48 {
+    fn read_byte(&self, addr: u16) -> u8 {
+        //
+        if addr < 0x4000 {
+            self.rom16k[addr as usize]
+        } else {
+            self.ram48k[(addr - 0x4000) as usize]
+        }
+    }
+
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        // ROM protection: prevent writes to 0x0000-0x3FFF
+        if addr >= 0x4000 {
+            self.ram48k[(addr - 0x4000) as usize] = val;
+        }
+    }
+}
+
+
+impl Ports for MachineZxSpectrum48 {
+    fn read_port(&self, port: u16) -> u8 {
+        // Simple mock for 48K Spectrum
+        // Port 0xFE (Keyboard/Ear)
+        if (port & 0x01) == 0 {
+            return 0xFF; // No keys pressed
+        }
+        0xFF
+    }
+
+    fn write_port(&mut self, port: u16, val: u8) {
+        // Port 0xFE (Border/Mic/Beep)
+        if (port & 0x01) == 0 {
+            self.border_color = val & 0x07;
+        }
+    }
+}
+
+
+impl MachineZxSpectrum48 {
+    pub fn new() -> Self {
+        let mut machine = Self {
+            screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
+            border_color: 7, // White border
+            ram48k: [0; 0xC000],
+            rom16k: [0; 0x4000],
+            z80: Z80::new(),
+        };
+        machine.load_rom(); // Завантаж ROM
+        machine
+    }
+
+    pub fn load_rom(&mut self) {
+        let mut loaded = false;
+        let rom_name = "48.rom";
+        if let Ok(rom) = std::fs::read(rom_name) {
+            // Check if it looks like a valid ROM (exact size for 48K ROM)
+            if rom.len() == 16384 {
+                    self.rom16k[..16384].copy_from_slice(&rom);
+                    loaded = true;
+            } else {
+                println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
+            }
+        }
+        if !loaded {
+            println!("Loading built-in test program...");
+            // Simple test program to fill screen
+            let code: &[u8] = &[
+                0x21, 0x00, 0x40, // LD HL, 0x4000
+                0x34,             // INC (HL)
+                0x23,             // INC HL
+                0x7C,             // LD A, H
+                0xFE, 0x58,       // CP 0x58
+                0x20, 0xF7,       // JR NZ, -9 (to 0x34)
+                0xC3, 0x00, 0x00, // JP 0x0000
+            ];
+            for (i, &b) in code.iter().enumerate() {
+                self.rom16k[i] = b;
+            }
+        }
+    }
+}
+
 
 pub struct Emulator {
     pub memory: [u8; 0x10000],
@@ -51,6 +281,7 @@ pub struct Emulator {
     pub alt_af: u16, pub alt_bc: u16, pub alt_de: u16, pub alt_hl: u16,
     pub halted: bool,
     pub rom_writable: bool, // Disable ROM protection during tests
+    pub interrupt_counter: u32, // For tracking interrupt timing
 }
 
 impl Emulator {
@@ -67,6 +298,7 @@ impl Emulator {
             alt_af: 0, alt_bc: 0, alt_de: 0, alt_hl: 0,
             halted: false,
             rom_writable: false,
+            interrupt_counter: 0, // Initialize counter
         };
         emu.load_rom(); // Завантаж ROM
         emu
@@ -194,45 +426,59 @@ impl Emulator {
     }
 
     pub fn step(&mut self) {
-        // Simulate 50Hz interrupt at the start of the frame
-        if self.iff1 {
-            // In a real emulator, this happens based on cycles. 
-            // Here we just trigger it once per 'step' call (frame).
-            self.trigger_interrupt();
-        }
-
+        // Execute CPU cycles until next interrupt
+        // ZX Spectrum runs at 3.5MHz, generates interrupt every 50th of a second = every 70000 T-states
+        // We execute ~10000 instructions per frame for UI responsiveness
+        // Only allow ONE interrupt per frame to avoid nested/repeated interrupts
+        let mut interrupt_triggered_this_frame = false;
+        
         for _ in 0..10000 {
             if self.halted {
-                // CPU waits for interrupt. Since we handle interrupt outside this loop,
-                // we just break to simulate waiting for the next frame/interrupt.
+                // CPU waits for interrupt. 
+                // R register still increments during HALT
                 self.r = self.r.wrapping_add(1);
                 break;
             }
 
+          
+            if !interrupt_triggered_this_frame && self.interrupt_counter >= 10000 && self.iff1 {
+                self.trigger_interrupt();
+                self.interrupt_counter = 0;
+                interrupt_triggered_this_frame = true;
+            }
+            
             self.execute_next_opcode();
+            
+            // Increment instruction counter for interrupt timing
+            self.interrupt_counter = self.interrupt_counter.wrapping_add(1);
         }
+        
     }
 
     fn trigger_interrupt(&mut self) {
-        // Accept interrupt
-        if self.halted {
-            self.halted = false;
-            self.pc = self.pc.wrapping_add(1);
-        }
-
+        // Z80 interrupt sequence:
+        // 1. If IFF1=0, interrupt is not accepted
+        // 2. IFF1 and IFF2 are cleared
+        // 3. Interrupt mode determines vector address
+        // 4. Return address (PC) is pushed to stack
+        // 5. PC is set to interrupt vector
+        // 6. HALT is cleared (interrupt resumes execution)
+        
         self.iff1 = false;
         self.iff2 = false;
+        self.halted = false; // Clear HALT status when interrupt accepted
         
-        // Push PC
+        // Push return address
         self.push(self.pc);
         
-        // Jump to interrupt vector (IM 1 = 0x0038)
+        // Jump to interrupt handler based on IM
         match self.im {
-            0 => { self.pc = 0x0038; }, // Effectively RST 38H (0xFF on bus)
-            1 => { self.pc = 0x0038; },
+            0 => { self.pc = 0x0038; }, // IM 0: RST 38H (0xFF on bus) - not common on Spectrum
+            1 => { self.pc = 0x0038; }, // IM 1: Fixed address 0x0038 (Spectrum standard)
             2 => {
-                let vector = (self.i as u16) << 8 | 0xFF; // Bus usually 0xFF
-                self.pc = self.read_word(vector);
+                // IM 2: Vector in (I register << 8) | (bus low byte, usually 0xFF)
+                let vector_addr = (self.i as u16) << 8 | 0xFF;
+                self.pc = self.read_word(vector_addr);
             },
             _ => {}
         }
@@ -568,8 +814,12 @@ impl Emulator {
                 }
             },
             1 => { // LD r, r' or HALT
-                if y == 6 && z == 6 { self.halted = true; self.pc = self.pc.wrapping_sub(1); } // HALT (PC-1 to point to HALT again effectively, but halted flag stops fetch)
-                else { self.set_r8(y, self.get_r8(z, prefix, disp), prefix, disp); }
+                if y == 6 && z == 6 { 
+                    // HALT instruction: Enter halt state
+                    // PC already incremented by fetch_byte(), so it points to next instruction
+                    // When interrupt occurs, return address (next instruction) will be pushed
+                    self.halted = true; 
+                } else { self.set_r8(y, self.get_r8(z, prefix, disp), prefix, disp); }
             },
             2 => { // ALU A, r
                 self.alu(y, self.get_r8(z, prefix, disp));
@@ -607,8 +857,8 @@ impl Emulator {
                                 self.set_rp(2, t, prefix); 
                             },
                             5 => { let t = self.d; self.d = self.h; self.h = t; let t = self.e; self.e = self.l; self.l = t; }, // EX DE, HL
-                            6 => self.iff1 = false, // DI
-                            7 => self.iff1 = true, // EI
+                            6 => { self.iff1 = false; self.iff2 = false; }, // DI: Disable interrupts
+                            7 => { self.iff1 = true; self.iff2 = true; }, // EI: Enable interrupts
                             _ => {}
                         }
                     },
@@ -906,7 +1156,7 @@ impl Emulator {
             let mut repeat = false;
 
             match z {
-                0 => { // LD block
+                0 => { // LD block (LDI, LDIR, LDD, LDDR)
                     let val = self.read_byte(hl);
                     self.write_byte(de, val);
                     
@@ -919,20 +1169,24 @@ impl Emulator {
                     }
                     bc = bc.wrapping_sub(1);
                     
-                    self.f = (self.f & !(F_H | F_N | F_PV)) | (if bc != 0 { F_PV } else { 0 });
+                    // Z80 spec for LD operations: H=0, N=0, PV=1 if BC!=0
+                    let pv_flag = if bc == 0 { 0 } else { F_PV };
+                    self.f = (self.f & (F_C | F_S | F_Z))  // Preserve C, S, Z flags
+                             | pv_flag;                    // Set PV based on BC (1 if block not complete)
                     
                     if is_repeat && bc != 0 { // Repeat (LDIR/LDDR)
                         repeat = true;
                     }
                 },
-                1 => { // CP block
+                1 => { // CP block (CPI, CPIR, CPD, CPDR)
                     let val = self.read_byte(hl);
                     let res = self.a.wrapping_sub(val);
                     
                     if y & 1 == 0 { hl = hl.wrapping_add(1); } else { hl = hl.wrapping_sub(1); }
                     bc = bc.wrapping_sub(1);
                     
-                    let h_flag = (self.a & 0xF) < (val & 0xF);
+                    // Z80 spec: H flag = half-carry from bit 4, detected by XOR method
+                    let h_flag = ((self.a ^ val ^ res) & 0x10) != 0;
                     self.f = (self.f & !(F_S | F_Z | F_H | F_PV | F_N)) |
                              (if res & 0x80 != 0 { F_S } else { 0 }) |
                              (if res == 0 { F_Z } else { 0 }) |
@@ -1153,7 +1407,7 @@ mod tests {
         }
         
         assert_eq!(emu.a, 0x55);
-        assert_eq!(emu.pc, 6); // PC points to HALT instruction (decremented in execute)
+        assert_eq!(emu.pc, 7); // PC advanced past HALT instruction
     }
 
     #[test]
@@ -1232,6 +1486,130 @@ mod tests {
         assert_eq!(emu.memory[0x8001], 0x66);
         assert_eq!(emu.b, 0);
         assert_eq!(emu.c, 0);
+        
+        // Verify flags after LDIR: H=0, N=0, PV=0 (block complete)
+        assert_eq!(emu.f & F_H, 0, "LDIR: H flag should be 0");
+        assert_eq!(emu.f & F_N, 0, "LDIR: N flag should be 0");
+        assert_eq!(emu.f & F_PV, 0, "LDIR: PV flag should be 0 (block complete)");
+    }
+
+    #[test]
+    fn test_block_ldi_single() {
+        // LDI: Single increment operation
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.memory[0x0100] = 0x42;
+        
+        emu.h = 0x01; emu.l = 0x00;
+        emu.d = 0x80; emu.e = 0x00;
+        emu.b = 0x00; emu.c = 0x01;
+        
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xA0; // LDI
+        emu.pc = 0;
+        let byte = emu.fetch_byte();
+        emu.execute(byte);
+        
+        assert_eq!(emu.memory[0x8000], 0x42);
+        assert_eq!((emu.h as u16) << 8 | emu.l as u16, 0x0101);
+        assert_eq!((emu.b as u16) << 8 | emu.c as u16, 0x0000);
+        assert_eq!(emu.f & F_PV, 0, "LDI: PV should be 0 when BC becomes 0");
+    }
+
+    #[test]
+    fn test_block_lddr_complete() {
+        // LDDR: Load Decrement Repeat (complete block)
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.memory[0x0100] = 0xAA;
+        emu.memory[0x0101] = 0xBB;
+        emu.memory[0x0102] = 0xCC;
+        
+        emu.h = 0x01; emu.l = 0x02;
+        emu.d = 0x80; emu.e = 0x02;
+        emu.b = 0x00; emu.c = 0x03;
+        
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xB8; // LDDR
+        emu.pc = 0;
+        let byte = emu.fetch_byte();
+        emu.execute(byte);
+        
+        assert_eq!(emu.memory[0x8002], 0xCC);
+        assert_eq!(emu.memory[0x8001], 0xBB);
+        assert_eq!(emu.memory[0x8000], 0xAA);
+        assert_eq!((emu.b as u16) << 8 | emu.c as u16, 0x0000);
+    }
+
+    #[test]
+    fn test_block_cpi_no_match() {
+        // CPI: Compare Increment (no match)
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.a = 0x55;
+        emu.memory[0x0100] = 0x11;
+        
+        emu.h = 0x01; emu.l = 0x00;
+        emu.b = 0x00; emu.c = 0x01;
+        
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xA1; // CPI
+        emu.pc = 0;
+        let byte = emu.fetch_byte();
+        emu.execute(byte);
+        
+        assert_eq!((emu.h as u16) << 8 | emu.l as u16, 0x0101);
+        assert_eq!(emu.f & F_Z, 0, "CPI: Z flag should be 0 (no match)");
+        assert_ne!(emu.f & F_N, 0, "CPI: N flag should be 1 (compare)");
+    }
+
+    #[test]
+    fn test_block_cpir_with_match() {
+        // CPIR: Compare Increment Repeat (find match)
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.a = 0x55;
+        emu.memory[0x0100] = 0x11;
+        emu.memory[0x0101] = 0x22;
+        emu.memory[0x0102] = 0x55; // Match!
+        
+        emu.h = 0x01; emu.l = 0x00;
+        emu.b = 0x00; emu.c = 0x05;
+        
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xB1; // CPIR
+        emu.pc = 0;
+        let byte = emu.fetch_byte();
+        emu.execute(byte);
+        
+        assert_eq!((emu.h as u16) << 8 | emu.l as u16, 0x0103);
+        assert_ne!(emu.f & F_Z, 0, "CPIR: Z flag should be 1 (match found)");
+        assert_ne!(emu.f & F_PV, 0, "CPIR: PV flag should be 1 (BC != 0)");
+    }
+
+    #[test]
+    fn test_ldir_flags_preserved() {
+        // Verify C and S flags are preserved during LDIR
+        let mut emu = Emulator::new();
+        emu.memory.fill(0);
+        emu.memory[0x0100] = 0x55;
+        
+        emu.f = F_C | F_S; // Set C and S flags before
+        
+        emu.h = 0x01; emu.l = 0x00;
+        emu.d = 0x80; emu.e = 0x00;
+        emu.b = 0x00; emu.c = 0x01;
+        
+        emu.memory[0] = 0xED;
+        emu.memory[1] = 0xB0; // LDIR
+        emu.pc = 0;
+        let byte = emu.fetch_byte();
+        emu.execute(byte);
+        
+        assert_ne!(emu.f & F_C, 0, "LDIR: C flag should be preserved");
+        assert_ne!(emu.f & F_S, 0, "LDIR: S flag should be preserved");
+        assert_eq!(emu.f & F_H, 0, "LDIR: H flag should be cleared");
+        assert_eq!(emu.f & F_N, 0, "LDIR: N flag should be cleared");
     }
 
     #[test]
@@ -1679,7 +2057,7 @@ mod tests {
         // Step 2: Execute HALT
         emu.execute_next_opcode();
         assert!(emu.halted);
-        assert_eq!(emu.pc, 1); // Points to HALT
+        assert_eq!(emu.pc, 2); // PC advanced to next instruction after HALT
         
         // Step 3: Trigger Interrupt
         emu.trigger_interrupt();
@@ -1690,7 +2068,7 @@ mod tests {
         
         // Check stack
         let ret_addr = emu.read_word(emu.sp);
-        assert_eq!(ret_addr, 2); // Should return to instruction after HALT
+        assert_eq!(ret_addr, 2); // Return address is the next instruction after HALT
         
         // Run ISR and return
         for _ in 0..3 { emu.execute_next_opcode(); }
