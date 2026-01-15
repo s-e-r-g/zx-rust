@@ -180,6 +180,17 @@ impl Z80 {
         if overflow { self.f |= F_PV; }
     }
 
+    fn set_flags_rot_shift(&mut self, result: u8, carry: bool) {
+        self.f = 0;
+        if result == 0 { self.f |= F_Z; }
+        if (result & 0x80) != 0 { self.f |= F_S; }
+        if (result & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
+        if carry { self.f |= F_C; }
+        if (result & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
+        // H and N are reset (already 0)
+        if Z80::parity(result) { self.f |= F_PV; }
+    }
+
     pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
         if self.int_requested {
             self.int_requested = false;
@@ -1629,100 +1640,461 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x5C => { // BIT 3, H
-                let bit = 3;
-                let val = self.h;
-                let bit_set = (val & (1 << bit)) != 0;
-                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z } else { 0 }) | (if bit_set { F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+            0x01 => { // RLC C
+                let val = self.c;
+                let new_val = val.rotate_left(1);
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            // SRL opcodes
-            0x38 => { // SRL B
+            0x02 => { // RLC D
+                let val = self.d;
+                let new_val = val.rotate_left(1);
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x03 => { // RLC E
+                let val = self.e;
+                let new_val = val.rotate_left(1);
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x04 => { // RLC H
+                let val = self.h;
+                let new_val = val.rotate_left(1);
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x05 => { // RLC L
+                let val = self.l;
+                let new_val = val.rotate_left(1);
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x06 => { // RLC (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_left(1);
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                15
+            }
+            0x07 => { // RLC A
+                let val = self.a;
+                let new_val = val.rotate_left(1);
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x08 => { // RRC B
+                let val = self.b;
+                let new_val = val.rotate_right(1);
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x09 => { // RRC C
+                let val = self.c;
+                let new_val = val.rotate_right(1);
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x0A => { // RRC D
+                let val = self.d;
+                let new_val = val.rotate_right(1);
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x0B => { // RRC E
+                let val = self.e;
+                let new_val = val.rotate_right(1);
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x0C => { // RRC H
+                let val = self.h;
+                let new_val = val.rotate_right(1);
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x0D => { // RRC L
+                let val = self.l;
+                let new_val = val.rotate_right(1);
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x0E => { // RRC (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_right(1);
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                15
+            }
+            0x0F => { // RRC A
+                let val = self.a;
+                let new_val = val.rotate_right(1);
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x10 => { // RL B
+                let val = self.b;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x11 => { // RL C
+                let val = self.c;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x12 => { // RL D
+                let val = self.d;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x13 => { // RL E
+                let val = self.e;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x14 => { // RL H
+                let val = self.h;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x15 => { // RL L
+                let val = self.l;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x16 => { // RL (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, new_carry);
+                15
+            }
+            0x17 => { // RL A
+                let val = self.a;
+                let new_carry = (val & 0x80) != 0;
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x18 => { // RR B
+                let val = self.b;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x19 => { // RR C
+                let val = self.c;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x1A => { // RR D
+                let val = self.d;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x1B => { // RR E
+                let val = self.e;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x1C => { // RR H
+                let val = self.h;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x1D => { // RR L
+                let val = self.l;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x1E => { // RR (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, new_carry);
+                15
+            }
+            0x1F => { // RR A
+                let val = self.a;
+                let new_carry = (val & 0x01) != 0;
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, new_carry);
+                8
+            }
+            0x20 => { // SLA B
+                let val = self.b;
+                let new_val = val << 1;
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x21 => { // SLA C
+                let val = self.c;
+                let new_val = val << 1;
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x22 => { // SLA D
+                let val = self.d;
+                let new_val = val << 1;
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x23 => { // SLA E
+                let val = self.e;
+                let new_val = val << 1;
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x24 => { // SLA H
+                let val = self.h;
+                let new_val = val << 1;
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x25 => { // SLA L
+                let val = self.l;
+                let new_val = val << 1;
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x26 => { // SLA (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = val << 1;
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                15
+            }
+            0x27 => { // SLA A
+                let val = self.a;
+                let new_val = val << 1;
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x28 => { // SRA B
+                let val = self.b;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x29 => { // SRA C
+                let val = self.c;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x2A => { // SRA D
+                let val = self.d;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x2B => { // SRA E
+                let val = self.e;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x2C => { // SRA H
+                let val = self.h;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x2D => { // SRA L
+                let val = self.l;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x2E => { // SRA (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = (val >> 1) | (val & 0x80);
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                15
+            }
+            0x2F => { // SRA A
+                let val = self.a;
+                let new_val = (val >> 1) | (val & 0x80);
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x30 => { // SRL B
                 let val = self.b;
                 let new_val = val >> 1;
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x39 => { // SRL C
+            0x31 => { // SRL C
                 let val = self.c;
                 let new_val = val >> 1;
                 self.c = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3A => { // SRL D
+            0x32 => { // SRL D
                 let val = self.d;
                 let new_val = val >> 1;
                 self.d = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3B => { // SRL E
+            0x33 => { // SRL E
                 let val = self.e;
                 let new_val = val >> 1;
                 self.e = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3C => { // SRL H
+            0x34 => { // SRL H
                 let val = self.h;
                 let new_val = val >> 1;
                 self.h = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3D => { // SRL L
+            0x35 => { // SRL L
                 let val = self.l;
                 let new_val = val >> 1;
                 self.l = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3E => { // SRL (HL)
+            0x36 => { // SRL (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 15
             }
-            0x3F => { // SRL A
+            0x37 => { // SRL A
                 let val = self.a;
                 let new_val = val >> 1;
                 self.a = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
+                8
+            }
+            0x40..=0x7F => { // BIT b, r
+                let bit = (opcode >> 3) & 0x07;
+                let r = opcode & 0x07;
+                let val = if r == 6 { bus.read_byte(self.get_hl()) } else { self.get_reg(r) };
+                let bit_set = (val & (1 << bit)) != 0;
+                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                // F_X and F_Y are copied from corresponding bits of the operand being tested (val)
+                self.f |= (val & (F_Y | F_X));
                 8
             }
             0x80..=0xBF => { // RES b, r
-                let b = (opcode - 0x80) / 8;
-                let r = (opcode - 0x80) % 8;
-                if r == 6 {
+                let b = (opcode >> 3) & 0x07;
+                let r = opcode & 0x07;
+                if r == 6 { // RES b, (HL)
                     let addr = self.get_hl();
                     let val = bus.read_byte(addr);
                     let new_val = val & !(1 << b);
                     bus.write_byte(addr, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     15
-                } else {
+                } else { // RES b, r
                     let val = self.get_reg(r);
                     let new_val = val & !(1 << b);
                     self.set_reg(r, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     8
                 }
             }
             0xC0..=0xFF => { // SET b, r
-                let b = (opcode - 0xC0) / 8;
-                let r = (opcode - 0xC0) % 8;
-                if r == 6 {
+                let b = (opcode >> 3) & 0x07;
+                let r = opcode & 0x07;
+                if r == 6 { // SET b, (HL)
                     let addr = self.get_hl();
                     let val = bus.read_byte(addr);
                     let new_val = val | (1 << b);
                     bus.write_byte(addr, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     15
-                } else {
+                } else { // SET b, r
                     let val = self.get_reg(r);
                     let new_val = val | (1 << b);
                     self.set_reg(r, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     8
                 }
             }
@@ -1859,7 +2231,7 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
                 self.f &= !(F_H | F_N | F_PV);
-                if bc != 0 { self.f |= F_PV; }
+                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (self.a & (F_Y | F_X));
                 16
             }
             _ => {
@@ -1872,9 +2244,495 @@ impl Z80 {
     fn step_dd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            // Implement DD opcodes here
+            0x09 => { // ADD IX, BC
+                let result = self.ix.wrapping_add(self.get_bc());
+                self.ix = result;
+                15
+            }
+            0x19 => { // ADD IX, DE
+                let result = self.ix.wrapping_add(self.get_de());
+                self.ix = result;
+                15
+            }
+            0x21 => { // LD IX, nn
+                self.ix = self.read_word_pc(bus);
+                14
+            }
+            0x22 => { // LD (nn), IX
+                let nn = self.read_word_pc(bus);
+                bus.write_byte(nn, self.ix as u8);
+                bus.write_byte(nn.wrapping_add(1), (self.ix >> 8) as u8);
+                20
+            }
+            0x23 => { // INC IX
+                self.ix = self.ix.wrapping_add(1);
+                10
+            }
+            0x24 => { // INC IXH (undocumented)
+                let result = ((self.ix >> 8) as u8).wrapping_add(1);
+                self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
+                self.set_flags_add(result as u8, 1, result as u16);
+                self.f &= !F_N;
+                8
+            }
+            0x25 => { // DEC IXH (undocumented)
+                let result = ((self.ix >> 8) as u8).wrapping_sub(1);
+                self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
+                self.set_flags_sub(result as u8, 1, result as i16);
+                8
+            }
+            0x26 => { // LD IXH, n (undocumented)
+                let n = self.read_byte_pc(bus);
+                self.ix = (self.ix & 0x00FF) | ((n as u16) << 8);
+                11
+            }
+            0x29 => { // ADD IX, IX
+                let result = self.ix.wrapping_add(self.ix);
+                self.ix = result;
+                15
+            }
+            0x2A => { // LD IX, (nn)
+                let nn = self.read_word_pc(bus);
+                let low = bus.read_byte(nn);
+                let high = bus.read_byte(nn.wrapping_add(1));
+                self.ix = (high as u16) << 8 | low as u16;
+                20
+            }
+            0x2B => { // DEC IX
+                self.ix = self.ix.wrapping_sub(1);
+                10
+            }
+            0x2C => { // INC IXL (undocumented)
+                let result = (self.ix as u8).wrapping_add(1);
+                self.ix = (self.ix & 0xFF00) | result as u16;
+                self.set_flags_add(result, 1, result as u16);
+                self.f &= !F_N;
+                8
+            }
+            0x2D => { // DEC IXL (undocumented)
+                let result = (self.ix as u8).wrapping_sub(1);
+                self.ix = (self.ix & 0xFF00) | result as u16;
+                self.set_flags_sub(result, 1, result as i16);
+                8
+            }
+            0x2E => { // LD IXL, n (undocumented)
+                let n = self.read_byte_pc(bus);
+                self.ix = (self.ix & 0xFF00) | n as u16;
+                11
+            }
+            0x34 => { // INC (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr).wrapping_add(1);
+                bus.write_byte(addr, val);
+                self.set_flags_add(val, 1, val as u16);
+                self.f &= !F_N;
+                23
+            }
+            0x35 => { // DEC (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr).wrapping_sub(1);
+                bus.write_byte(addr, val);
+                self.set_flags_sub(val, 1, val as i16);
+                23
+            }
+            0x36 => { // LD (IX+d), n
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let n = self.read_byte_pc(bus);
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, n);
+                19
+            }
+            0x39 => { // ADD IX, SP
+                let result = self.ix.wrapping_add(self.sp);
+                self.ix = result;
+                15
+            }
+            0x44 => { // LD B, IXH (undocumented)
+                self.b = (self.ix >> 8) as u8;
+                8
+            }
+            0x45 => { // LD B, IXL (undocumented)
+                self.b = self.ix as u8;
+                8
+            }
+            0x46 => { // LD B, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.b = bus.read_byte(addr);
+                19
+            }
+            0x4C => { // LD C, IXH (undocumented)
+                self.c = (self.ix >> 8) as u8;
+                8
+            }
+            0x4D => { // LD C, IXL (undocumented)
+                self.c = self.ix as u8;
+                8
+            }
+            0x4E => { // LD C, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.c = bus.read_byte(addr);
+                19
+            }
+            0x54 => { // LD D, IXH (undocumented)
+                self.d = (self.ix >> 8) as u8;
+                8
+            }
+            0x55 => { // LD D, IXL (undocumented)
+                self.d = self.ix as u8;
+                8
+            }
+            0x56 => { // LD D, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.d = bus.read_byte(addr);
+                19
+            }
+            0x5C => { // LD E, IXH (undocumented)
+                self.e = (self.ix >> 8) as u8;
+                8
+            }
+            0x5D => { // LD E, IXL (undocumented)
+                self.e = self.ix as u8;
+                8
+            }
+            0x5E => { // LD E, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.e = bus.read_byte(addr);
+                19
+            }
+            0x60 => { // LD IXH, B (undocumented)
+                self.ix = (self.ix & 0x00FF) | ((self.b as u16) << 8);
+                8
+            }
+            0x61 => { // LD IXH, C (undocumented)
+                self.ix = (self.ix & 0x00FF) | ((self.c as u16) << 8);
+                8
+            }
+            0x62 => { // LD IXH, D (undocumented)
+                self.ix = (self.ix & 0x00FF) | ((self.d as u16) << 8);
+                8
+            }
+            0x63 => { // LD IXH, E (undocumented)
+                self.ix = (self.ix & 0x00FF) | ((self.e as u16) << 8);
+                8
+            }
+            0x64 => { // LD IXH, IXH (undocumented)
+                // No-op
+                8
+            }
+            0x65 => { // LD IXH, IXL (undocumented)
+                let ixl = self.ix as u8;
+                self.ix = (self.ix & 0x00FF) | ((ixl as u16) << 8);
+                8
+            }
+            0x66 => { // LD H, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.h = bus.read_byte(addr);
+                19
+            }
+            0x67 => { // LD IXH, A (undocumented)
+                self.ix = (self.ix & 0x00FF) | ((self.a as u16) << 8);
+                8
+            }
+            0x68 => { // LD IXL, B (undocumented)
+                self.ix = (self.ix & 0xFF00) | self.b as u16;
+                8
+            }
+            0x69 => { // LD IXL, C (undocumented)
+                self.ix = (self.ix & 0xFF00) | self.c as u16;
+                8
+            }
+            0x6A => { // LD IXL, D (undocumented)
+                self.ix = (self.ix & 0xFF00) | self.d as u16;
+                8
+            }
+            0x6B => { // LD IXL, E (undocumented)
+                self.ix = (self.ix & 0xFF00) | self.e as u16;
+                8
+            }
+            0x6C => { // LD IXL, IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                self.ix = (self.ix & 0xFF00) | ixh as u16;
+                8
+            }
+            0x6D => { // LD IXL, IXL (undocumented)
+                // No-op
+                8
+            }
+            0x6E => { // LD L, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.l = bus.read_byte(addr);
+                19
+            }
+            0x6F => { // LD IXL, A (undocumented)
+                self.ix = (self.ix & 0xFF00) | self.a as u16;
+                8
+            }
+            0x70 => { // LD (IX+d), B
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.b);
+                19
+            }
+            0x71 => { // LD (IX+d), C
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.c);
+                19
+            }
+            0x72 => { // LD (IX+d), D
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.d);
+                19
+            }
+            0x73 => { // LD (IX+d), E
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.e);
+                19
+            }
+            0x74 => { // LD (IX+d), H
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.h);
+                19
+            }
+            0x75 => { // LD (IX+d), L
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.l);
+                19
+            }
+            0x77 => { // LD (IX+d), A
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                bus.write_byte(addr, self.a);
+                19
+            }
+            0x7C => { // LD A, IXH (undocumented)
+                self.a = (self.ix >> 8) as u8;
+                8
+            }
+            0x7D => { // LD A, IXL (undocumented)
+                self.a = self.ix as u8;
+                8
+            }
+            0x7E => { // LD A, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                self.a = bus.read_byte(addr);
+                19
+            }
+            0x84 => { // ADD A, IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                let result = self.a as u16 + ixh as u16;
+                self.set_flags_add(self.a, ixh, result);
+                self.a = result as u8;
+                8
+            }
+            0x85 => { // ADD A, IXL (undocumented)
+                let ixl = self.ix as u8;
+                let result = self.a as u16 + ixl as u16;
+                self.set_flags_add(self.a, ixl, result);
+                self.a = result as u8;
+                8
+            }
+            0x86 => { // ADD A, (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as u16 + val as u16;
+                self.set_flags_add(self.a, val, result);
+                self.a = result as u8;
+                19
+            }
+            0x8C => { // ADC A, IXH (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let ixh = (self.ix >> 8) as u8;
+                let result = self.a as u16 + ixh as u16 + carry;
+                self.set_flags_add(self.a, ixh + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x8D => { // ADC A, IXL (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let ixl = self.ix as u8;
+                let result = self.a as u16 + ixl as u16 + carry;
+                self.set_flags_add(self.a, ixl + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x8E => { // ADC A, (IX+d)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as u16 + val as u16 + carry;
+                self.set_flags_add(self.a, val + carry as u8, result);
+                self.a = result as u8;
+                19
+            }
+            0x94 => { // SUB IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                let result = self.a as i16 - ixh as i16;
+                self.set_flags_sub(self.a, ixh, result);
+                self.a = result as u8;
+                8
+            }
+            0x95 => { // SUB IXL (undocumented)
+                let ixl = self.ix as u8;
+                let result = self.a as i16 - ixl as i16;
+                self.set_flags_sub(self.a, ixl, result);
+                self.a = result as u8;
+                8
+            }
+            0x96 => { // SUB (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16;
+                self.set_flags_sub(self.a, val, result);
+                self.a = result as u8;
+                19
+            }
+            0x9C => { // SBC A, IXH (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let ixh = (self.ix >> 8) as u8;
+                let result = self.a as i16 - ixh as i16 - carry;
+                self.set_flags_sub(self.a, ixh + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x9D => { // SBC A, IXL (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let ixl = self.ix as u8;
+                let result = self.a as i16 - ixl as i16 - carry;
+                self.set_flags_sub(self.a, ixl + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x9E => { // SBC A, (IX+d)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16 - carry;
+                self.set_flags_sub(self.a, val + carry as u8, result);
+                self.a = result as u8;
+                19
+            }
+            0xA4 => { // AND IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                self.a &= ixh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xA5 => { // AND IXL (undocumented)
+                let ixl = self.ix as u8;
+                self.a &= ixl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xA6 => { // AND (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a &= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xAC => { // XOR IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                self.a ^= ixh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xAD => { // XOR IXL (undocumented)
+                let ixl = self.ix as u8;
+                self.a ^= ixl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xAE => { // XOR (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a ^= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xB4 => { // OR IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                self.a |= ixh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xB5 => { // OR IXL (undocumented)
+                let ixl = self.ix as u8;
+                self.a |= ixl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xB6 => { // OR (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a |= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xBC => { // CP IXH (undocumented)
+                let ixh = (self.ix >> 8) as u8;
+                let result = self.a as i16 - ixh as i16;
+                self.set_flags_sub(self.a, ixh, result);
+                8
+            }
+            0xBD => { // CP IXL (undocumented)
+                let ixl = self.ix as u8;
+                let result = self.a as i16 - ixl as i16;
+                self.set_flags_sub(self.a, ixl, result);
+                8
+            }
+            0xBE => { // CP (IX+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.ix.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16;
+                self.set_flags_sub(self.a, val, result);
+                19
+            }
             0xCB => { // DD CB prefix
                 self.step_ddcb(bus)
+            }
+            0xE1 => { // POP IX
+                self.ix = self.pop(bus);
+                14
+            }
+            0xE3 => { // EX (SP), IX
+                let sp_val = self.pop(bus);
+                self.push(bus, self.ix);
+                self.ix = sp_val;
+                23
+            }
+            0xE5 => { // PUSH IX
+                self.push(bus, self.ix);
+                15
+            }
+            0xE9 => { // JP (IX)
+                self.pc = self.ix;
+                8
+            }
+            0xF9 => { // LD SP, IX
+                self.sp = self.ix;
+                10
             }
             _ => {
                 println!("Unimplemented DD opcode: {:02X}", opcode);
@@ -1968,28 +2826,265 @@ impl Z80 {
     fn step_fd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
+            0x09 => { // ADD IY, BC
+                let result = self.iy.wrapping_add(self.get_bc());
+                self.iy = result;
+                15
+            }
+            0x19 => { // ADD IY, DE
+                let result = self.iy.wrapping_add(self.get_de());
+                self.iy = result;
+                15
+            }
             0x21 => { // LD IY, nn
                 self.iy = self.read_word_pc(bus);
                 14
             }
+            0x22 => { // LD (nn), IY
+                let nn = self.read_word_pc(bus);
+                bus.write_byte(nn, self.iy as u8);
+                bus.write_byte(nn.wrapping_add(1), (self.iy >> 8) as u8);
+                20
+            }
+            0x23 => { // INC IY
+                self.iy = self.iy.wrapping_add(1);
+                10
+            }
+            0x24 => { // INC IYH (undocumented)
+                let result = ((self.iy >> 8) as u8).wrapping_add(1);
+                self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
+                self.set_flags_add(result, 1, result as u16);
+                self.f &= !F_N;
+                8
+            }
+            0x25 => { // DEC IYH (undocumented)
+                let result = ((self.iy >> 8) as u8).wrapping_sub(1);
+                self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
+                self.set_flags_sub(result, 1, result as i16);
+                8
+            }
+            0x26 => { // LD IYH, n (undocumented)
+                let n = self.read_byte_pc(bus);
+                self.iy = (self.iy & 0x00FF) | ((n as u16) << 8);
+                11
+            }
+            0x29 => { // ADD IY, IY
+                let result = self.iy.wrapping_add(self.iy);
+                self.iy = result;
+                15
+            }
+            0x2A => { // LD IY, (nn)
+                let nn = self.read_word_pc(bus);
+                let low = bus.read_byte(nn);
+                let high = bus.read_byte(nn.wrapping_add(1));
+                self.iy = (high as u16) << 8 | low as u16;
+                20
+            }
+            0x2B => { // DEC IY
+                self.iy = self.iy.wrapping_sub(1);
+                10
+            }
+            0x2C => { // INC IYL (undocumented)
+                let result = (self.iy as u8).wrapping_add(1);
+                self.iy = (self.iy & 0xFF00) | result as u16;
+                self.set_flags_add(result, 1, result as u16);
+                self.f &= !F_N;
+                8
+            }
+            0x2D => { // DEC IYL (undocumented)
+                let result = (self.iy as u8).wrapping_sub(1);
+                self.iy = (self.iy & 0xFF00) | result as u16;
+                self.set_flags_sub(result, 1, result as i16);
+                8
+            }
+            0x2E => { // LD IYL, n (undocumented)
+                let n = self.read_byte_pc(bus);
+                self.iy = (self.iy & 0xFF00) | n as u16;
+                11
+            }
+            0x34 => { // INC (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr).wrapping_add(1);
+                bus.write_byte(addr, val);
+                self.set_flags_add(val, 1, val as u16);
+                self.f &= !F_N;
+                23
+            }
             0x35 => { // DEC (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
-                let val = bus.read_byte(addr);
-                let result = val.wrapping_sub(1);
-                bus.write_byte(addr, result);
-                self.f = (self.f & F_C) |
-                         (if (result & 0x80) != 0 { F_S } else { 0 }) |
-                         (if result == 0 { F_Z } else { 0 }) |
-                         F_N |
-                         (if val == 0x80 { F_PV } else { 0 }) |
-                         (if (val & 0x0F) == 0 { F_H } else { 0 });
+                let val = bus.read_byte(addr).wrapping_sub(1);
+                bus.write_byte(addr, val);
+                self.set_flags_sub(val, 1, val as i16);
                 23
+            }
+            0x36 => { // LD (IY+d), n
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let n = self.read_byte_pc(bus);
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, n);
+                19
+            }
+            0x39 => { // ADD IY, SP
+                let result = self.iy.wrapping_add(self.sp);
+                self.iy = result;
+                15
+            }
+            0x44 => { // LD B, IYH (undocumented)
+                self.b = (self.iy >> 8) as u8;
+                8
+            }
+            0x45 => { // LD B, IYL (undocumented)
+                self.b = self.iy as u8;
+                8
+            }
+            0x46 => { // LD B, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.b = bus.read_byte(addr);
+                19
+            }
+            0x4C => { // LD C, IYH (undocumented)
+                self.c = (self.iy >> 8) as u8;
+                8
+            }
+            0x4D => { // LD C, IYL (undocumented)
+                self.c = self.iy as u8;
+                8
+            }
+            0x4E => { // LD C, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.c = bus.read_byte(addr);
+                19
+            }
+            0x54 => { // LD D, IYH (undocumented)
+                self.d = (self.iy >> 8) as u8;
+                8
+            }
+            0x55 => { // LD D, IYL (undocumented)
+                self.d = self.iy as u8;
+                8
+            }
+            0x56 => { // LD D, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.d = bus.read_byte(addr);
+                19
+            }
+            0x5C => { // LD E, IYH (undocumented)
+                self.e = (self.iy >> 8) as u8;
+                8
+            }
+            0x5D => { // LD E, IYL (undocumented)
+                self.e = self.iy as u8;
+                8
+            }
+            0x5E => { // LD E, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.e = bus.read_byte(addr);
+                19
+            }
+            0x60 => { // LD IYH, B (undocumented)
+                self.iy = (self.iy & 0x00FF) | ((self.b as u16) << 8);
+                8
+            }
+            0x61 => { // LD IYH, C (undocumented)
+                self.iy = (self.iy & 0x00FF) | ((self.c as u16) << 8);
+                8
+            }
+            0x62 => { // LD IYH, D (undocumented)
+                self.iy = (self.iy & 0x00FF) | ((self.d as u16) << 8);
+                8
+            }
+            0x63 => { // LD IYH, E (undocumented)
+                self.iy = (self.iy & 0x00FF) | ((self.e as u16) << 8);
+                8
+            }
+            0x64 => { // LD IYH, IYH (undocumented)
+                // No-op
+                8
+            }
+            0x65 => { // LD IYH, IYL (undocumented)
+                let iyl = self.iy as u8;
+                self.iy = (self.iy & 0x00FF) | ((iyl as u16) << 8);
+                8
+            }
+            0x66 => { // LD H, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.h = bus.read_byte(addr);
+                19
+            }
+            0x67 => { // LD IYH, A (undocumented)
+                self.iy = (self.iy & 0x00FF) | ((self.a as u16) << 8);
+                8
+            }
+            0x68 => { // LD IYL, B (undocumented)
+                self.iy = (self.iy & 0xFF00) | self.b as u16;
+                8
+            }
+            0x69 => { // LD IYL, C (undocumented)
+                self.iy = (self.iy & 0xFF00) | self.c as u16;
+                8
+            }
+            0x6A => { // LD IYL, D (undocumented)
+                self.iy = (self.iy & 0xFF00) | self.d as u16;
+                8
+            }
+            0x6B => { // LD IYL, E (undocumented)
+                self.iy = (self.iy & 0xFF00) | self.e as u16;
+                8
+            }
+            0x6C => { // LD IYL, IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                self.iy = (self.iy & 0xFF00) | iyh as u16;
+                8
+            }
+            0x6D => { // LD IYL, IYL (undocumented)
+                // No-op
+                8
+            }
+            0x6E => { // LD L, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.l = bus.read_byte(addr);
+                19
+            }
+            0x6F => { // LD IYL, A (undocumented)
+                self.iy = (self.iy & 0xFF00) | self.a as u16;
+                8
+            }
+            0x70 => { // LD (IY+d), B
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.b);
+                19
             }
             0x71 => { // LD (IY+d), C
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.c);
+                19
+            }
+            0x72 => { // LD (IY+d), D
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.d);
+                19
+            }
+            0x73 => { // LD (IY+d), E
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.e);
+                19
+            }
+            0x74 => { // LD (IY+d), H
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.h);
                 19
             }
             0x75 => { // LD (IY+d), L
@@ -1998,15 +3093,228 @@ impl Z80 {
                 bus.write_byte(addr, self.l);
                 19
             }
+            0x77 => { // LD (IY+d), A
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.a);
+                19
+            }
+            0x7C => { // LD A, IYH (undocumented)
+                self.a = (self.iy >> 8) as u8;
+                8
+            }
+            0x7D => { // LD A, IYL (undocumented)
+                self.a = self.iy as u8;
+                8
+            }
+            0x7E => { // LD A, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                self.a = bus.read_byte(addr);
+                19
+            }
+            0x84 => { // ADD A, IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                let result = self.a as u16 + iyh as u16;
+                self.set_flags_add(self.a, iyh, result);
+                self.a = result as u8;
+                8
+            }
+            0x85 => { // ADD A, IYL (undocumented)
+                let iyl = self.iy as u8;
+                let result = self.a as u16 + iyl as u16;
+                self.set_flags_add(self.a, iyl, result);
+                self.a = result as u8;
+                8
+            }
+            0x86 => { // ADD A, (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as u16 + val as u16;
+                self.set_flags_add(self.a, val, result);
+                self.a = result as u8;
+                19
+            }
+            0x8C => { // ADC A, IYH (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let iyh = (self.iy >> 8) as u8;
+                let result = self.a as u16 + iyh as u16 + carry;
+                self.set_flags_add(self.a, iyh + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x8D => { // ADC A, IYL (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let iyl = self.iy as u8;
+                let result = self.a as u16 + iyl as u16 + carry;
+                self.set_flags_add(self.a, iyl + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x8E => { // ADC A, (IY+d)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as u16 + val as u16 + carry;
+                self.set_flags_add(self.a, val + carry as u8, result);
+                self.a = result as u8;
+                19
+            }
+            0x94 => { // SUB IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                let result = self.a as i16 - iyh as i16;
+                self.set_flags_sub(self.a, iyh, result);
+                self.a = result as u8;
+                8
+            }
+            0x95 => { // SUB IYL (undocumented)
+                let iyl = self.iy as u8;
+                let result = self.a as i16 - iyl as i16;
+                self.set_flags_sub(self.a, iyl, result);
+                self.a = result as u8;
+                8
+            }
+            0x96 => { // SUB (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16;
+                self.set_flags_sub(self.a, val, result);
+                self.a = result as u8;
+                19
+            }
+            0x9C => { // SBC A, IYH (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let iyh = (self.iy >> 8) as u8;
+                let result = self.a as i16 - iyh as i16 - carry;
+                self.set_flags_sub(self.a, iyh + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x9D => { // SBC A, IYL (undocumented)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let iyl = self.iy as u8;
+                let result = self.a as i16 - iyl as i16 - carry;
+                self.set_flags_sub(self.a, iyl + carry as u8, result);
+                self.a = result as u8;
+                8
+            }
+            0x9E => { // SBC A, (IY+d)
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16 - carry;
+                self.set_flags_sub(self.a, val + carry as u8, result);
+                self.a = result as u8;
+                19
+            }
+            0xA4 => { // AND IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                self.a &= iyh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xA5 => { // AND IYL (undocumented)
+                let iyl = self.iy as u8;
+                self.a &= iyl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xA6 => { // AND (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a &= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xAC => { // XOR IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                self.a ^= iyh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xAD => { // XOR IYL (undocumented)
+                let iyl = self.iy as u8;
+                self.a ^= iyl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xAE => { // XOR (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a ^= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xB4 => { // OR IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                self.a |= iyh;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xB5 => { // OR IYL (undocumented)
+                let iyl = self.iy as u8;
+                self.a |= iyl;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                8
+            }
+            0xB6 => { // OR (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                self.a |= val;
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                19
+            }
+            0xBC => { // CP IYH (undocumented)
+                let iyh = (self.iy >> 8) as u8;
+                let result = self.a as i16 - iyh as i16;
+                self.set_flags_sub(self.a, iyh, result);
+                8
+            }
+            0xBD => { // CP IYL (undocumented)
+                let iyl = self.iy as u8;
+                let result = self.a as i16 - iyl as i16;
+                self.set_flags_sub(self.a, iyl, result);
+                8
+            }
+            0xBE => { // CP (IY+d)
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                let val = bus.read_byte(addr);
+                let result = self.a as i16 - val as i16;
+                self.set_flags_sub(self.a, val, result);
+                19
+            }
             0xCB => { // FD CB prefix
                 self.step_fdcb(bus)
             }
-            0x36 => { // LD (IY+d), n
-                let d = self.read_byte_pc(bus) as i8;
-                let n = self.read_byte_pc(bus);
-                let addr = self.iy.wrapping_add(d as u16);
-                bus.write_byte(addr, n);
-                19
+            0xE1 => { // POP IY
+                self.iy = self.pop(bus);
+                14
+            }
+            0xE3 => { // EX (SP), IY
+                let sp_val = self.pop(bus);
+                self.push(bus, self.iy);
+                self.iy = sp_val;
+                23
+            }
+            0xE5 => { // PUSH IY
+                self.push(bus, self.iy);
+                15
+            }
+            0xE9 => { // JP (IY)
+                self.pc = self.iy;
+                8
+            }
+            0xF9 => { // LD SP, IY
+                self.sp = self.iy;
+                10
             }
             _ => {
                 println!("Unimplemented FD opcode: {:02X}", opcode);
