@@ -2,6 +2,8 @@
 //!
 //! This module implements a complete Z80 CPU emulator with full instruction set support.
 
+use std::iter::Enumerate;
+
 use crate::emulator::{Bus, Memory};
 
 // Z80 CPU Flag register bits
@@ -15,6 +17,12 @@ const F_N: u8 = 0x02;   // Subtract flag
 const F_C: u8 = 0x01;   // Carry flag
 
 #[derive(Clone)]
+pub enum InterruptMode {
+    IM0,
+    IM1,
+    IM2
+}
+
 pub struct Z80 {
     pub a: u8,
     pub f: u8,
@@ -52,7 +60,7 @@ pub struct Z80 {
     pub iff1: bool,
     pub iff2: bool,
 
-    pub im: u8,
+    pub im: InterruptMode,
 
     pub int_requested: bool,
 }
@@ -74,7 +82,7 @@ impl Z80 {
             i: 0, r: 0,
             iff1: false,
             iff2: false,
-            im: 1,
+            im: InterruptMode::IM1,
             int_requested: false,
         }
     }
@@ -196,8 +204,22 @@ impl Z80 {
             self.int_requested = false;
             // Handle interrupt
             self.push(bus, self.pc);
-            self.pc = 0x0038;
-            return 13; // T-states for interrupt handling
+            match self.im {
+                InterruptMode::IM0 => {
+                    self.pc = 0x0038;
+                    return 13; // T-states for interrupt handling
+                }
+                InterruptMode::IM1 => {
+                    self.pc = 0x0038;
+                    return 13; // T-states for interrupt handling
+                }
+                InterruptMode::IM2 => {
+                    let data_on_the_bus: u8= 0xFF; // TODO: Assume data bus returns 0xFF and spec is correct
+                    let addr = (self.i as u16) << 8 | (data_on_the_bus & 0xFE) as u16 ; // LSB is ignored
+                    self.pc = bus.read_byte(addr) as u16 + ((bus.read_byte(addr.wrapping_add(1)) as u16) << 8);
+                    return 19; // T-states for interrupt handling
+                }
+            }
         }
 
         // Fetch opcode
@@ -1623,10 +1645,6 @@ impl Z80 {
                 self.pc = 0x38;
                 11
             }
-            _ => {
-                println!("Unimplemented opcode: {:02X}", opcode);
-                4 // Default T-states for unimplemented opcodes
-            }
         }
     }
 
@@ -2098,10 +2116,7 @@ impl Z80 {
                     8
                 }
             }
-            _ => {
-                println!("Unimplemented CB opcode: {:02X}", opcode);
-                8
-            }
+            56_u8..=63_u8 => todo!()
         }
     }
 
@@ -2114,9 +2129,17 @@ impl Z80 {
                 bus.write_byte(nn.wrapping_add(1), self.b);
                 20
             }
+            0x46 => { // IM 0
+                self.im = InterruptMode::IM0;
+                8
+            }
             0x47 => { // LD I, A
                 self.i = self.a;
                 9
+            }
+            0x4E => { // IM 0
+                self.im = InterruptMode::IM0;
+                8
             }
             0x52 => { // SBC HL, DE
                 let hl = self.get_hl() as u32;
@@ -2141,7 +2164,11 @@ impl Z80 {
                 20
             }
             0x56 => { // IM 1
-                self.im = 1;
+                self.im = InterruptMode::IM1;
+                8
+            }
+            0x5E => { // IM 2
+                self.im = InterruptMode::IM2;
                 8
             }
             0x78 => { // IN A, (C)
@@ -3443,7 +3470,7 @@ impl Z80 {
         self.iff1 = false; 
         self.iff2 = false;
         
-        self.im = 1;
+        self.im = InterruptMode::IM0;
         self.int_requested = false;
     }
 
