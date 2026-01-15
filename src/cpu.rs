@@ -7,7 +7,9 @@ use crate::emulator::{Bus, Memory};
 // Z80 CPU Flag register bits
 const F_S: u8 = 0x80;   // Sign flag
 const F_Z: u8 = 0x40;   // Zero flag
+const F_Y: u8 = 0x20;   // Undocumented flag (bit 5 of result)
 const F_H: u8 = 0x10;   // Half-carry flag
+const F_X: u8 = 0x08;   // Undocumented flag (bit 3 of result)
 const F_PV: u8 = 0x04;  // Parity/Overflow flag
 const F_N: u8 = 0x02;   // Subtract flag
 const F_C: u8 = 0x01;   // Carry flag
@@ -157,7 +159,9 @@ impl Z80 {
         self.f = 0;
         if res == 0 { self.f |= F_Z; }
         if (res & 0x80) != 0 { self.f |= F_S; }
+        if (res & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
         if (result & 0x100) != 0 { self.f |= F_C; }
+        if (res & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
         if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
         let overflow = ((a ^ res) & (b ^ res) & 0x80) != 0;
         if overflow { self.f |= F_PV; }
@@ -168,7 +172,9 @@ impl Z80 {
         self.f = F_N;
         if res == 0 { self.f |= F_Z; }
         if (res & 0x80) != 0 { self.f |= F_S; }
+        if (res & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
         if result < 0 { self.f |= F_C; }
+        if (res & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
         if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
         let overflow = ((a ^ res) & ((!b) ^ res) & 0x80) != 0;
         if overflow { self.f |= F_PV; }
@@ -1038,123 +1044,123 @@ impl Z80 {
             }
             0xA0 => { // AND B
                 self.a &= self.b;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA1 => { // AND C
                 self.a &= self.c;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA2 => { // AND D
                 self.a &= self.d;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA3 => { // AND E
                 self.a &= self.e;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA4 => { // AND H
                 self.a &= self.h;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA5 => { // AND L
                 self.a &= self.l;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA6 => { // AND (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a &= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xA7 => { // AND A
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA8 => { // XOR B
                 self.a ^= self.b;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xA9 => { // XOR C
                 self.a ^= self.c;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xAA => { // XOR D
                 self.a ^= self.d;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xAB => { // XOR E
                 self.a ^= self.e;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xAC => { // XOR H
                 self.a ^= self.h;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xAD => { // XOR L
                 self.a ^= self.l;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xAE => { // XOR (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a ^= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xAF => { // XOR A
                 self.a = 0;
-                self.f = F_Z | F_PV;
+                self.f = F_Z | F_PV | F_X | F_Y;  // Undocumented flags set for XOR A
                 4
             }
             0xB0 => { // OR B
                 self.a |= self.b;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB1 => { // OR C
                 self.a |= self.c;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB2 => { // OR D
                 self.a |= self.d;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB3 => { // OR E
                 self.a |= self.e;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB4 => { // OR H
                 self.a |= self.h;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB5 => { // OR L
                 self.a |= self.l;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB6 => { // OR (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a |= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xB7 => { // OR A
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0xB8 => { // CP B
@@ -2553,6 +2559,43 @@ mod tests {
         let cycles = cpu.step(&mut mem as &mut dyn Bus);
         // write_port called with 0xFE00, 0x42
         assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_undocumented_flags_and() {
+        let mut cpu = Z80::new();
+        cpu.a = 0xF0; // 11110000
+        cpu.b = 0x0F; // 00001111
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xA0; // AND B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0x00); // 0xF0 & 0x0F = 0x00
+        assert_eq!(cpu.f & F_Z, F_Z); // Zero flag set
+        assert_eq!(cpu.f & F_H, F_H); // Half-carry set for AND
+        assert_eq!(cpu.f & F_N, 0); // Subtract flag not set
+        assert_eq!(cpu.f & F_C, 0); // Carry flag not set
+        assert_eq!(cpu.f & F_X, 0); // Undocumented X flag not set (bit 3 of result is 0)
+        assert_eq!(cpu.f & F_Y, 0); // Undocumented Y flag not set (bit 5 of result is 0)
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_undocumented_flags_xor() {
+        let mut cpu = Z80::new();
+        cpu.a = 0xAA; // 10101010
+        cpu.d = 0x55; // 01010101
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xAA; // XOR D
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF); // 0xAA ^ 0x55 = 0xFF
+        assert_eq!(cpu.f & F_Z, 0); // Not zero
+        assert_eq!(cpu.f & F_S, F_S); // Sign set (bit 7 = 1)
+        assert_eq!(cpu.f & F_H, 0); // Half-carry not set for XOR
+        assert_eq!(cpu.f & F_N, 0); // Subtract flag not set
+        assert_eq!(cpu.f & F_C, 0); // Carry flag not set
+        assert_eq!(cpu.f & F_X, F_X); // Undocumented X flag set (bit 3 of result is 1)
+        assert_eq!(cpu.f & F_Y, F_Y); // Undocumented Y flag set (bit 5 of result is 1)
+        assert_eq!(cycles, 4);
     }
 
     #[test]
