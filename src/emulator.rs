@@ -41,15 +41,6 @@ pub trait Memory {
     fn write_byte(&mut self, addr: u16, val: u8);
 }
 
-pub trait Screen {
-    fn get_border_left_width(&self) -> u8;
-    fn get_border_right_width(&self) -> u8;
-    fn get_border_top_height(&self) -> u8;
-    fn get_border_bottom_height(&self) -> u8;
-    fn get_screen_width(&self) -> u8;
-    fn get_screen_height(&self) -> u8;
-}
-
 pub trait Ports {
     fn read_port(&self, port: u16) -> u8;
     fn write_port(&mut self, port: u16, val: u8);
@@ -61,6 +52,7 @@ struct Ula {
     framebuffer: Vec<u8>, // RGBA bytes
     h_counter: usize,
     v_counter: usize,
+    border_color: u8,
 }
 
 impl Ula {
@@ -69,14 +61,15 @@ impl Ula {
             framebuffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             h_counter: 0,
             v_counter: 0,
+            border_color: 0,
         }
     }
 
-    fn tick(&mut self, memory: &dyn Memory, border_color: u8) {
+    fn tick(&mut self, memory: &dyn Memory) {
         let pixel = if self.in_visible_area() {
             self.compute_pixel(memory)
         } else {
-            PALETTE[border_color as usize]
+            PALETTE[self.border_color as usize]
         };
         let idx = self.idx() * 4;
         self.framebuffer[idx..idx+4].copy_from_slice(&pixel);
@@ -141,7 +134,6 @@ impl Memory for Memory48k {
 
 pub struct MachineZxSpectrum48 {
     ula: Ula,
-    border_color: u8,
     memory: Memory48k,
     cpu: crate::cpu::Z80,
     t_states: u32,
@@ -163,7 +155,7 @@ impl Ports for MachineZxSpectrum48 {
     fn write_port(&mut self, port: u16, val: u8) {
         // Port 0xFE (Border/Mic/Beep)
         if (port & 0x01) == 0 {
-            self.border_color = val & 0x07;
+            self.ula.border_color = val & 0x07;
         }
     }
 }
@@ -185,7 +177,6 @@ impl MachineZxSpectrum48 {
     pub fn new() -> Self {
         let mut machine = Self {
             ula: Ula::new(),
-            border_color: 7, // White border
             memory: Memory48k {
                 ram: [0; 0xC000],
                 rom: [0; 0x4000],
@@ -201,7 +192,7 @@ impl MachineZxSpectrum48 {
 
     pub fn load_rom(&mut self) {
         let mut loaded = false;
-        let rom_name = "48.rom";
+        let rom_name = "Robik48.rom";
         if let Ok(rom) = std::fs::read(rom_name) {
             // Check if it looks like a valid ROM (exact size for 48K ROM)
             if rom.len() == 16384 {
@@ -242,7 +233,7 @@ impl MachineZxSpectrum48 {
 
             };
             for _ in 0..t_states {
-                self.ula.tick(&self.memory, self.border_color);
+                self.ula.tick(&self.memory);
                 self.t_states += 1;
 
                 if self.t_states == 69888 {
