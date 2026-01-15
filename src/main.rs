@@ -1,3 +1,4 @@
+mod cpu;
 mod emulator;
 mod screen;
 

@@ -63,166 +63,6 @@ pub trait Ports {
     fn write_port(&mut self, port: u16, val: u8);
 }
 
-pub struct Z80 {
-    pub a: u8,
-    pub f: u8,
-    
-    pub b: u8, 
-    pub c: u8,
-    
-    pub d: u8, 
-    pub e: u8,
-    
-    pub h: u8, 
-    pub l: u8,
-    
-    pub a_alt: u8, 
-    pub f_alt: u8,
-    
-    pub b_alt: u8, 
-    pub c_alt: u8,
-    
-    pub d_alt: u8, 
-    pub e_alt: u8,
-    
-    pub h_alt: u8, 
-    pub l_alt: u8,
-
-    pub sp: u16,
-    pub pc: u16,
-    
-    pub ix: u16, 
-    pub iy: u16,
-    
-    pub i: u8, 
-    pub r: u8,
-    
-    pub iff1: bool, 
-    pub iff2: bool,
-
-    pub im: u8,
-
-    pub int_requested: bool,
-}
-
-impl Z80 {
-    pub fn new() -> Self {
-        Self {
-            a: 0, f: 0,
-            b: 0, c: 0,
-            d: 0, e: 0,
-            h: 0, l: 0,
-            a_alt: 0, f_alt: 0,
-            b_alt: 0, c_alt: 0,
-            d_alt: 0, e_alt: 0,
-            h_alt: 0, l_alt: 0,
-            sp: 0,
-            pc: 0,
-            ix: 0, iy: 0,
-            i: 0, r: 0,
-            iff1: false, 
-            iff2: false,
-            im: 1,
-            int_requested: false,
-        }
-    }
-
-    fn push(&mut self, mem: &mut dyn Memory, value: u16) {
-        self.sp = self.sp.wrapping_sub(1);
-        mem.write_byte(self.sp, (value & 0xFF) as u8);
-        self.sp = self.sp.wrapping_sub(1);
-        mem.write_byte(self.sp, (value >> 8) as u8);
-    }
-
-    pub fn step(&mut self, bus: &mut dyn Memory) -> u32 {
-        if self.int_requested {
-            self.int_requested = false;
-            // Handle interrupt
-            // For simplicity, we assume IM 1 and jump to 0x0038
-            self.push(bus, self.pc);
-            self.pc = 0x0038;
-            return 13; // T-states for interrupt handling
-        }
-
-        // Fetch opcode
-        let opcode = bus.read_byte(self.pc);
-        self.pc = self.pc.wrapping_add(1);
-
-        // Decode and execute opcode
-        match opcode {
-            0x00 => {
-                // NOP
-                4 // T-states
-            }
-            0x3E => {
-                // LD A, n
-                let value = bus.read_byte(self.pc);
-                self.pc = self.pc.wrapping_add(1);
-                self.a = value;
-                7 // T-states
-            }
-            // ... (implement other opcodes as needed)
-            _ => {
-                println!("Unimplemented opcode: {:02X}", opcode);
-                4 // Default T-states for unimplemented opcodes
-            }
-        }
-        
-    }    
-
-    pub fn reset(&mut self){
-        // Reset CPU state
-        self.a = 0; 
-        self.f = 0;
-        
-        self.b = 0; 
-        self.c = 0; 
-        
-        self.d = 0; 
-        self.e = 0;
-        
-        self.h = 0; 
-        self.l = 0;
-        
-        self.a_alt = 0; 
-        self.f_alt = 0;
-        
-        self.b_alt = 0; 
-        self.c_alt = 0;
-        
-        self.d_alt = 0; 
-        self.e_alt = 0;
-        
-        self.h_alt = 0; 
-        self.l_alt = 0;
-
-        self.sp = 0; 
-        self.pc = 0;
-        
-        self.ix = 0; 
-        self.iy = 0;
-        
-        self.i = 0; 
-        self.r = 0;
-        
-        self.iff1 = false; 
-        self.iff2 = false;
-        
-        self.im = 1;
-        self.int_requested = false;
-    }
-
-    pub fn raise_int(&mut self) {
-        if !self.iff1 {
-            return;
-        }
-        self.iff1 = false;
-        self.iff2 = false;
-        self.int_requested = true;
-    }
-   
-}
-
 struct Ula {
     framebuffer: Vec<u8>, // RGBA bytes
     h_counter: usize,
@@ -309,7 +149,7 @@ pub struct MachineZxSpectrum48 {
     ula: Ula,
     border_color: u8,
     memory: Memory48k,
-    cpu: Z80,
+    cpu: crate::cpu::Z80,
     t_states: u32,
     frame_ready: bool,
     pub screen_buffer: Vec<u8>,
@@ -344,7 +184,7 @@ impl MachineZxSpectrum48 {
                 ram: [0; 0xC000],
                 rom: [0; 0x4000],
             },
-            cpu: Z80::new(),
+            cpu: crate::cpu::Z80::new(),
             t_states: 0,
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
