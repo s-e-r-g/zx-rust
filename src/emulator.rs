@@ -36,14 +36,6 @@ const PALETTE: [[u8; 4]; 16] = [
     [0xFF, 0xFF, 0xFF, 0xFF], // 15: Bright White
 ];
 
-// Z80 CPU Flag register bits
-const F_S: u8 = 0x80;   // Sign flag
-const F_Z: u8 = 0x40;   // Zero flag
-const F_H: u8 = 0x10;   // Half-carry flag
-const F_PV: u8 = 0x04;  // Parity/Overflow flag
-const F_N: u8 = 0x02;   // Subtract flag
-const F_C: u8 = 0x01;   // Carry flag
-
 pub trait Memory {
     fn read_byte(&self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, val: u8);
@@ -241,10 +233,6 @@ impl MachineZxSpectrum48 {
                 }
             }
         }
-    }
-
-    pub fn render(&mut self) {
-        // Rendering is handled by copying to screen_buffer in run_until_frame
     }
 }
 

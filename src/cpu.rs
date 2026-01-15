@@ -1586,7 +1586,78 @@ impl Z80 {
     fn step_cb(&mut self, bus: &mut dyn Memory) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            // Implement CB opcodes here
+            0x00 => { // RLC B
+                let val = self.b;
+                let new_val = val.rotate_left(1);
+                self.b = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                8
+            }
+            0x5C => { // BIT 3, H
+                let bit = 3;
+                let val = self.h;
+                let bit_set = (val & (1 << bit)) != 0;
+                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                8
+            }
+            // SRL opcodes
+            0x38 => { // SRL B
+                let val = self.b;
+                let new_val = val >> 1;
+                self.b = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x39 => { // SRL C
+                let val = self.c;
+                let new_val = val >> 1;
+                self.c = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x3A => { // SRL D
+                let val = self.d;
+                let new_val = val >> 1;
+                self.d = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x3B => { // SRL E
+                let val = self.e;
+                let new_val = val >> 1;
+                self.e = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x3C => { // SRL H
+                let val = self.h;
+                let new_val = val >> 1;
+                self.h = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x3D => { // SRL L
+                let val = self.l;
+                let new_val = val >> 1;
+                self.l = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
+            0x3E => { // SRL (HL)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = val >> 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                15
+            }
+            0x3F => { // SRL A
+                let val = self.a;
+                let new_val = val >> 1;
+                self.a = new_val;
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                8
+            }
             _ => {
                 println!("Unimplemented CB opcode: {:02X}", opcode);
                 8
@@ -1633,6 +1704,21 @@ impl Z80 {
                 self.im = 1;
                 8
             }
+            0x78 => { // IN A, (C)
+                // Mock input: read from port BC
+                // Since bus is Memory, not Ports, use a mock value
+                let port = self.get_bc();
+                let val = 0xFF; // Mock input value
+                self.a = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
+            0x7B => { // LD SP, (nn)
+                let nn = self.read_word_pc(bus);
+                let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
+                self.sp = val;
+                20
+            }
             0xB0 => { // LDIR
                 let mut tstates = 0u32;
                 loop {
@@ -1676,8 +1762,93 @@ impl Z80 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
             // Implement DD opcodes here
+            0xCB => { // DD CB prefix
+                self.step_ddcb(bus)
+            }
             _ => {
                 println!("Unimplemented DD opcode: {:02X}", opcode);
+                8
+            }
+        }
+    }
+
+    fn step_ddcb(&mut self, bus: &mut dyn Memory) -> u32 {
+        let d = self.read_byte_pc(bus) as i8 as i16;
+        let addr = self.ix.wrapping_add(d as u16);
+        let opcode = self.read_byte_pc(bus);
+        match opcode {
+            0x06 => { // RLC (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_left(1);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x0E => { // RRC (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_right(1);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x16 => { // RL (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x1E => { // RR (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x26 => { // SLA (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = val << 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x2E => { // SRA (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val >> 1) | (val & 0x80);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x3E => { // SRL (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = val >> 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IX+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let bit_set = (val & (1 << bit)) != 0;
+                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                20
+            }
+            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IX+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let new_val = val & !(1 << bit);
+                bus.write_byte(addr, new_val);
+                23
+            }
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => { // SET b, (IX+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let new_val = val | (1 << bit);
+                bus.write_byte(addr, new_val);
+                23
+            }
+            _ => {
+                println!("Unimplemented DDCB opcode: {:02X}", opcode);
                 8
             }
         }
@@ -1704,6 +1875,18 @@ impl Z80 {
                          (if (val & 0x0F) == 0 { F_H } else { 0 });
                 23
             }
+            0x71 => { // LD (IY+d), C
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.c);
+                19
+            }
+            0x75 => { // LD (IY+d), L
+                let d = self.read_byte_pc(bus) as i8 as i16;
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, self.l);
+                19
+            }
             0xCB => { // FD CB prefix
                 self.step_fdcb(bus)
             }
@@ -1719,7 +1902,76 @@ impl Z80 {
         let addr = self.iy.wrapping_add(d as u16);
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            // Implement FD CB opcodes here (bit operations on (IY+d))
+            0x06 => { // RLC (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_left(1);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x0E => { // RRC (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = val.rotate_right(1);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x16 => { // RL (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x1E => { // RR (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x26 => { // SLA (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = val << 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
+            0x2E => { // SRA (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = (val >> 1) | (val & 0x80);
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x3E => { // SRL (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = val >> 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IY+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let bit_set = (val & (1 << bit)) != 0;
+                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                20
+            }
+            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IY+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let new_val = val & !(1 << bit);
+                bus.write_byte(addr, new_val);
+                23
+            }
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => { // SET b, (IY+d)
+                let bit = (opcode >> 3) & 0x07;
+                let val = bus.read_byte(addr);
+                let new_val = val | (1 << bit);
+                bus.write_byte(addr, new_val);
+                23
+            }
             _ => {
                 println!("Unimplemented FDCB opcode: {:02X}", opcode);
                 8
