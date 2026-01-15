@@ -434,7 +434,7 @@ impl Z80 {
                 } else {
                     self.a = self.a.wrapping_add(correction);
                 }
-                self.f = (self.f & (F_C | F_N)) | if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = (self.f & (F_C | F_N)) | if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0x28 => { // JR Z, d
@@ -483,7 +483,7 @@ impl Z80 {
             }
             0x2F => { // CPL
                 self.a = !self.a;
-                self.f |= F_H | F_N;
+                self.f = (self.f & F_C) | F_H | F_N | if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 4
             }
             0x30 => { // JR NC, d
@@ -531,7 +531,7 @@ impl Z80 {
                 10
             }
             0x37 => { // SCF
-                self.f = (self.f & (F_S | F_Z | F_PV)) | F_C;
+                self.f = (self.f & (F_S | F_Z | F_PV | F_X | F_Y)) | F_C;
                 4
             }
             0x38 => { // JR C, d
@@ -579,7 +579,7 @@ impl Z80 {
             }
             0x3F => { // CCF
                 let carry = (self.f & F_C) != 0;
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if !carry { F_C } else { 0 } | if carry { F_H } else { 0 };
+                self.f = (self.f & (F_S | F_Z | F_PV | F_X | F_Y)) | if !carry { F_C } else { 0 } | if carry { F_H } else { 0 };
                 4
             }
             0x40 => { // LD B, B
@@ -1456,7 +1456,7 @@ impl Z80 {
             0xE6 => { // AND n
                 let n = self.read_byte_pc(bus);
                 self.a &= n;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | F_H | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xE7 => { // RST 20
@@ -1506,7 +1506,7 @@ impl Z80 {
             0xEE => { // XOR n
                 let n = self.read_byte_pc(bus);
                 self.a ^= n;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xEF => { // RST 28
@@ -1556,7 +1556,7 @@ impl Z80 {
             0xF6 => { // OR n
                 let n = self.read_byte_pc(bus);
                 self.a |= n;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Self::parity(self.a) { F_PV } else { 0 };
                 7
             }
             0xF7 => { // RST 30
@@ -1626,7 +1626,7 @@ impl Z80 {
                 let val = self.b;
                 let new_val = val.rotate_left(1);
                 self.b = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
             0x5C => { // BIT 3, H
@@ -1641,7 +1641,7 @@ impl Z80 {
                 let val = self.b;
                 let new_val = val >> 1;
                 self.b = new_val;
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
             0x39 => { // SRL C
@@ -1776,7 +1776,7 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.a = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
             0x7B => { // LD SP, (nn)
@@ -2243,6 +2243,8 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, 0); // no half carry
         assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
         assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -2283,6 +2285,8 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, 0); // no half carry
         assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
         assert_eq!(machine.cpu.f & F_N, F_N); // N set
+        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -2344,6 +2348,24 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, F_H); // half carry
         assert_eq!(machine.cpu.f & F_PV, F_PV); // overflow
         assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_37_scf() {
+        let mut machine = TestMachine::new(Some(vec![0x37])); // SCF
+        machine.cpu.f = F_S | F_Z | F_PV | F_X | F_Y; // set some flags including X and Y
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.f & F_S, F_S); // preserved
+        assert_eq!(machine.cpu.f & F_Z, F_Z); // preserved
+        assert_eq!(machine.cpu.f & F_PV, F_PV); // preserved
+        assert_eq!(machine.cpu.f & F_X, F_X); // preserved
+        assert_eq!(machine.cpu.f & F_Y, F_Y); // preserved
+        assert_eq!(machine.cpu.f & F_C, F_C); // set
+        assert_eq!(machine.cpu.f & F_H, 0); // reset
+        assert_eq!(machine.cpu.f & F_N, 0); // reset
         assert_eq!(cycles, 4);
     }
 
@@ -2360,6 +2382,8 @@ mod tests {
         assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
         assert_eq!(machine.cpu.f & F_N, F_N); // N set
         assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -2371,6 +2395,13 @@ mod tests {
         machine.cpu.d = 0x55;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF);
+        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
+        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
+        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
+        assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
+        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -2382,6 +2413,13 @@ mod tests {
         machine.cpu.c = 0xF0;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF);
+        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
+        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
+        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
+        assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
+        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -2869,6 +2907,8 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, F_H); // Half-carry set for AND
         assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
         assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
         assert_eq!(cycles, 4);
     }
 
@@ -2884,6 +2924,8 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, F_H); // Half-carry set for AND
         assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
         assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
         assert_eq!(cycles, 7);
     }
 
@@ -2910,9 +2952,12 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xF0); // 0xFF ^ 0x0F = 0xF0
         assert_eq!(machine.cpu.f & F_Z, 0); // Zero flag not set
+        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
         assert_eq!(machine.cpu.f & F_H, 0); // Half-carry not set for XOR
         assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
         assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
+        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
+        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
         assert_eq!(cycles, 7);
     }
 
