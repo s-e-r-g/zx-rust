@@ -37,7 +37,7 @@ impl eframe::App for MyApp {
         let now = std::time::Instant::now();
         if now.duration_since(self.last_frame_generation_start_time).as_millis() >= 20 { // ~50Hz (20ms)
             self.last_frame_generation_start_time = now;
-            self.emulator.step();
+            self.emulator.run_until_frame();
         }
 
         CentralPanel::default().show(ctx, |ui| {

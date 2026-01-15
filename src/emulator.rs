@@ -403,10 +403,6 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    pub fn step(&mut self) {
-        self.run_until_frame();
-    }
-
     pub fn render(&mut self) {
         // Rendering is handled by copying to screen_buffer in run_until_frame
     }
