@@ -1320,7 +1320,7 @@ impl Z80 {
             }
             0xD3 => { // OUT (n), A
                 let n = self.read_byte_pc(bus);
-                // For simplicity, ignore I/O
+                bus.write_port((self.a as u16) << 8 | n as u16, self.a);
                 11
             }
             0xD4 => { // CALL NC, nn
@@ -2553,6 +2553,19 @@ mod tests {
         let cycles = cpu.step(&mut mem as &mut dyn Bus);
         // write_port called with 0xFE00, 0x42
         assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_d3_out_n_a() {
+        let mut cpu = Z80::new();
+        cpu.a = 0xAB;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xD3; // OUT (n), A
+        mem.ram[1] = 0xCD; // n = 0xCD
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        // write_port called with (0xAB << 8 | 0xCD) = 0xABCD, 0xAB
+        assert_eq!(cycles, 11);
+        assert_eq!(cpu.pc, 2);
     }
 
     #[test]
