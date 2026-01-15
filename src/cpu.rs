@@ -104,6 +104,34 @@ impl Z80 {
         (high as u16) << 8 | low as u16
     }
 
+    fn get_reg(&self, reg: u8) -> u8 {
+        match reg {
+            0 => self.b,
+            1 => self.c,
+            2 => self.d,
+            3 => self.e,
+            4 => self.h,
+            5 => self.l,
+            6 => panic!("get_reg for (HL) not supported"),
+            7 => self.a,
+            _ => panic!("Invalid reg"),
+        }
+    }
+
+    fn set_reg(&mut self, reg: u8, val: u8) {
+        match reg {
+            0 => self.b = val,
+            1 => self.c = val,
+            2 => self.d = val,
+            3 => self.e = val,
+            4 => self.h = val,
+            5 => self.l = val,
+            6 => panic!("set_reg for (HL) not supported"),
+            7 => self.a = val,
+            _ => panic!("Invalid reg"),
+        }
+    }
+
     fn get_bc(&self) -> u16 { (self.b as u16) << 8 | self.c as u16 }
     fn set_bc(&mut self, val: u16) { self.b = (val >> 8) as u8; self.c = val as u8; }
 
@@ -131,7 +159,8 @@ impl Z80 {
         if (res & 0x80) != 0 { self.f |= F_S; }
         if (result & 0x100) != 0 { self.f |= F_C; }
         if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
-        if Self::parity(res) { self.f |= F_PV; }
+        let overflow = ((a ^ res) & (b ^ res) & 0x80) != 0;
+        if overflow { self.f |= F_PV; }
     }
 
     fn set_flags_sub(&mut self, a: u8, b: u8, result: i16) {
@@ -141,7 +170,8 @@ impl Z80 {
         if (res & 0x80) != 0 { self.f |= F_S; }
         if result < 0 { self.f |= F_C; }
         if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
-        if Self::parity(res) { self.f |= F_PV; }
+        let overflow = ((a ^ res) & ((!b) ^ res) & 0x80) != 0;
+        if overflow { self.f |= F_PV; }
     }
 
     pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
@@ -304,6 +334,7 @@ impl Z80 {
                 let result = hl + de;
                 self.set_hl(result as u16);
                 self.f = (self.f & (F_S | F_Z | F_PV)) | if (result & 0x10000) != 0 { F_C } else { 0 } | if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 };
+                self.f &= !F_N;
                 11
             }
             0x1A => { // LD A, (DE)
@@ -1597,7 +1628,7 @@ impl Z80 {
                 let bit = 3;
                 let val = self.h;
                 let bit_set = (val & (1 << bit)) != 0;
-                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z } else { 0 }) | (if bit_set { F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
                 8
             }
             // SRL opcodes
@@ -1657,6 +1688,38 @@ impl Z80 {
                 self.a = new_val;
                 self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
                 8
+            }
+            0x80..=0xBF => { // RES b, r
+                let b = (opcode - 0x80) / 8;
+                let r = (opcode - 0x80) % 8;
+                if r == 6 {
+                    let addr = self.get_hl();
+                    let val = bus.read_byte(addr);
+                    let new_val = val & !(1 << b);
+                    bus.write_byte(addr, new_val);
+                    15
+                } else {
+                    let val = self.get_reg(r);
+                    let new_val = val & !(1 << b);
+                    self.set_reg(r, new_val);
+                    8
+                }
+            }
+            0xC0..=0xFF => { // SET b, r
+                let b = (opcode - 0xC0) / 8;
+                let r = (opcode - 0xC0) % 8;
+                if r == 6 {
+                    let addr = self.get_hl();
+                    let val = bus.read_byte(addr);
+                    let new_val = val | (1 << b);
+                    bus.write_byte(addr, new_val);
+                    15
+                } else {
+                    let val = self.get_reg(r);
+                    let new_val = val | (1 << b);
+                    self.set_reg(r, new_val);
+                    8
+                }
             }
             _ => {
                 println!("Unimplemented CB opcode: {:02X}", opcode);
@@ -1780,6 +1843,19 @@ impl Z80 {
                     }
                 }
                 tstates
+            }
+            0xA0 => { // LDI
+                let val = bus.read_byte(self.get_hl());
+                bus.write_byte(self.get_de(), val);
+                let hl = self.get_hl().wrapping_add(1);
+                self.set_hl(hl);
+                let de = self.get_de().wrapping_add(1);
+                self.set_de(de);
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+                self.f &= !(F_H | F_N | F_PV);
+                if bc != 0 { self.f |= F_PV; }
+                16
             }
             _ => {
                 println!("Unimplemented ED opcode: {:02X}", opcode);
@@ -1919,6 +1995,13 @@ impl Z80 {
             }
             0xCB => { // FD CB prefix
                 self.step_fdcb(bus)
+            }
+            0x36 => { // LD (IY+d), n
+                let d = self.read_byte_pc(bus) as i8;
+                let n = self.read_byte_pc(bus);
+                let addr = self.iy.wrapping_add(d as u16);
+                bus.write_byte(addr, n);
+                19
             }
             _ => {
                 println!("Unimplemented FD opcode: {:02X}", opcode);
@@ -2064,6 +2147,7 @@ impl Z80 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emulator::Ports;
 
     struct TestMemory {
         ram: [u8; 0x10000],
@@ -2084,13 +2168,24 @@ mod tests {
         }
     }
 
+    impl Ports for TestMemory {
+        fn read_port(&self, _port: u16) -> u8 {
+            0xFF
+        }
+        fn write_port(&mut self, _port: u16, _val: u8) {
+            // Do nothing
+        }
+    }
+
+    impl Bus for TestMemory {}
+
     #[test]
     fn test_ld_a_n() {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0x3E; // LD A, n
         mem.ram[1] = 0x42; // n = 0x42
-        let cycles = cpu.step(&mut mem);
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
         assert_eq!(cpu.a, 0x42);
         assert_eq!(cycles, 7);
         assert_eq!(cpu.pc, 2);
@@ -2101,7 +2196,7 @@ mod tests {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0x00; // NOP
-        let cycles = cpu.step(&mut mem);
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
         assert_eq!(cycles, 4);
         assert_eq!(cpu.pc, 1);
     }
@@ -2113,9 +2208,448 @@ mod tests {
         cpu.b = 3;
         let mut mem = TestMemory::new();
         mem.ram[0] = 0x80; // ADD A, B
-        let cycles = cpu.step(&mut mem);
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
         assert_eq!(cpu.a, 8);
         assert_eq!(cycles, 4);
         assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_ld_bc_nn() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x01; // LD BC, nn
+        mem.ram[1] = 0x34;
+        mem.ram[2] = 0x12;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.get_bc(), 0x1234);
+        assert_eq!(cycles, 10);
+        assert_eq!(cpu.pc, 3);
+    }
+
+    #[test]
+    fn test_ld_hl_nn() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x21; // LD HL, nn
+        mem.ram[1] = 0x78;
+        mem.ram[2] = 0x56;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.get_hl(), 0x5678);
+        assert_eq!(cycles, 10);
+        assert_eq!(cpu.pc, 3);
+    }
+
+    #[test]
+    fn test_ld_a_bc() {
+        let mut cpu = Z80::new();
+        cpu.set_bc(0x1234);
+        let mut mem = TestMemory::new();
+        mem.ram[0x1234] = 0xAB;
+        mem.ram[0] = 0x0A; // LD A, (BC)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xAB);
+        assert_eq!(cycles, 7);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_ld_bc_a() {
+        let mut cpu = Z80::new();
+        cpu.a = 0xCD;
+        cpu.set_bc(0x1234);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x02; // LD (BC), A
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x1234], 0xCD);
+        assert_eq!(cycles, 7);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_inc_b() {
+        let mut cpu = Z80::new();
+        cpu.b = 5;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x04; // INC B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.b, 6);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_dec_c() {
+        let mut cpu = Z80::new();
+        cpu.c = 10;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x0D; // DEC C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.c, 9);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_add_hl_bc() {
+        let mut cpu = Z80::new();
+        cpu.set_hl(0x1000);
+        cpu.set_bc(0x2000);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x09; // ADD HL, BC
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.get_hl(), 0x3000);
+        assert_eq!(cycles, 11);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_add_a_b_flags() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x7F; // 127
+        cpu.b = 0x01; // 1
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x80; // ADD A, B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0x80); // 128, -128
+        assert_eq!(cpu.f & F_S, F_S); // sign set
+        assert_eq!(cpu.f & F_Z, 0); // not zero
+        assert_eq!(cpu.f & F_C, 0); // no carry
+        assert_eq!(cpu.f & F_H, F_H); // half carry
+        assert_eq!(cpu.f & F_PV, F_PV); // overflow
+        assert_eq!(cpu.f & F_N, 0); // N reset
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_sub_b() {
+        let mut cpu = Z80::new();
+        cpu.a = 10;
+        cpu.b = 3;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x90; // SUB B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 7);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_and_b() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x0F;
+        cpu.b = 0x0A;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xA0; // AND B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0x0A);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_or_c() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x0F;
+        cpu.c = 0xF0;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xB1; // OR C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_xor_d() {
+        let mut cpu = Z80::new();
+        cpu.a = 0xAA;
+        cpu.d = 0x55;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xAA; // XOR D
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_cp_e() {
+        let mut cpu = Z80::new();
+        cpu.a = 10;
+        cpu.e = 5;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xBB; // CP E
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 10); // A unchanged
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_jp_nn() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xC3; // JP nn
+        mem.ram[1] = 0x34;
+        mem.ram[2] = 0x12;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 0x1234);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_jr_nz() {
+        let mut cpu = Z80::new();
+        cpu.f = 0; // Z=0
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x20; // JR NZ, n
+        mem.ram[1] = 5; // +5
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 7); // 2 + 5
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_call_nn() {
+        let mut cpu = Z80::new();
+        cpu.sp = 0xFFFE;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCD; // CALL nn
+        mem.ram[1] = 0x34;
+        mem.ram[2] = 0x12;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 0x1234);
+        assert_eq!(cpu.sp, 0xFFFC);
+        assert_eq!(mem.ram[0xFFFC], 0x00);
+        assert_eq!(mem.ram[0xFFFD], 0x03);
+        assert_eq!(cycles, 17);
+    }
+
+    #[test]
+    fn test_ret() {
+        let mut cpu = Z80::new();
+        cpu.sp = 0xFFFC;
+        let mut mem = TestMemory::new();
+        mem.ram[0xFFFC] = 0x34;
+        mem.ram[0xFFFD] = 0x12;
+        mem.ram[0] = 0xC9; // RET
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 0x1234);
+        assert_eq!(cpu.sp, 0xFFFE);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_push_bc() {
+        let mut cpu = Z80::new();
+        cpu.sp = 0xFFFE;
+        cpu.set_bc(0x1234);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xC5; // PUSH BC
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.sp, 0xFFFC);
+        assert_eq!(mem.ram[0xFFFC], 0x12);
+        assert_eq!(mem.ram[0xFFFD], 0x34);
+        assert_eq!(cycles, 11);
+    }
+
+    #[test]
+    fn test_pop_de() {
+        let mut cpu = Z80::new();
+        cpu.sp = 0xFFFC;
+        let mut mem = TestMemory::new();
+        mem.ram[0xFFFC] = 0x78;
+        mem.ram[0xFFFD] = 0x56;
+        mem.ram[0] = 0xD1; // POP DE
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.get_de(), 0x5678);
+        assert_eq!(cpu.sp, 0xFFFE);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_ldi() {
+        let mut cpu = Z80::new();
+        cpu.set_hl(0x1000);
+        cpu.set_de(0x2000);
+        cpu.set_bc(1);
+        let mut mem = TestMemory::new();
+        mem.ram[0x1000] = 0xAB;
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0xA0; // LDI
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x2000], 0xAB);
+        assert_eq!(cpu.get_hl(), 0x1001);
+        assert_eq!(cpu.get_de(), 0x2001);
+        assert_eq!(cpu.get_bc(), 0);
+        assert_eq!(cycles, 16);
+    }
+
+    #[test]
+    fn test_ldir() {
+        let mut cpu = Z80::new();
+        cpu.set_hl(0x1000);
+        cpu.set_de(0x2000);
+        cpu.set_bc(3);
+        let mut mem = TestMemory::new();
+        mem.ram[0x1000] = 0x11;
+        mem.ram[0x1001] = 0x22;
+        mem.ram[0x1002] = 0x33;
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0xB0; // LDIR
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x2000], 0x11);
+        assert_eq!(mem.ram[0x2001], 0x22);
+        assert_eq!(mem.ram[0x2002], 0x33);
+        assert_eq!(cpu.get_hl(), 0x1003);
+        assert_eq!(cpu.get_de(), 0x2003);
+        assert_eq!(cpu.get_bc(), 0);
+        assert_eq!(cycles, 21 * 3);
+    }
+
+    #[test]
+    fn test_rlc_b() {
+        let mut cpu = Z80::new();
+        cpu.b = 0x85; // 10000101
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x00; // RLC B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.b, 0x0B); // 00001011, C=1
+        assert_eq!(cpu.f & F_C, F_C);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_bit_0_b() {
+        let mut cpu = Z80::new();
+        cpu.b = 0x01; // bit 0 set
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x40; // BIT 0, B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.f & F_Z, 0); // not zero
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_set_1_c() {
+        let mut cpu = Z80::new();
+        cpu.c = 0x00;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0xC9; // SET 1, C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.c, 0x02);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_res_2_d() {
+        let mut cpu = Z80::new();
+        cpu.d = 0xFF;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x92; // RES 2, D
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.d, 0xFB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_in_a_c() {
+        let mut cpu = Z80::new();
+        cpu.set_bc(0xFE00);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0x78; // IN A, (C)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF); // from test port
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_out_c_a() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x42;
+        cpu.set_bc(0xFE00);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0x79; // OUT (C), A
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        // write_port called with 0xFE00, 0x42
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_ld_iy_nn() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0x21; // LD IY, nn
+        mem.ram[2] = 0x34;
+        mem.ram[3] = 0x12;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.iy, 0x1234);
+        assert_eq!(cycles, 14);
+    }
+
+    #[test]
+    fn test_ld_iy_d_n() {
+        let mut cpu = Z80::new();
+        cpu.iy = 0x1000;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0x36; // LD (IY+d), n
+        mem.ram[2] = 0x10; // d=16
+        mem.ram[3] = 0xAB; // n
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x1010], 0xAB);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_dec_iy_d() {
+        let mut cpu = Z80::new();
+        cpu.iy = 0x1000;
+        let mut mem = TestMemory::new();
+        mem.ram[0x1005] = 10;
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0x35; // DEC (IY+d)
+        mem.ram[2] = 0x05; // d=5
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x1005], 9);
+        assert_eq!(cycles, 23);
+    }
+
+    #[test]
+    fn test_rlc_iy_d() {
+        let mut cpu = Z80::new();
+        cpu.iy = 0x1000;
+        let mut mem = TestMemory::new();
+        mem.ram[0x1005] = 0x85;
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0xCB; // FD CB
+        mem.ram[2] = 0x05; // d=5
+        mem.ram[3] = 0x06; // RLC (IY+d)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x1005], 0x0B);
+        assert_eq!(cycles, 23);
+    }
+
+    #[test]
+    fn test_bit_3_iy_d() {
+        let mut cpu = Z80::new();
+        cpu.iy = 0x1000;
+        let mut mem = TestMemory::new();
+        mem.ram[0x1005] = 0x08; // bit 3 set
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0xCB;
+        mem.ram[2] = 0x05;
+        mem.ram[3] = 0x5E; // BIT 3, (IY+d)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.f & F_Z, 0);
+        assert_eq!(cycles, 20);
     }
 }
