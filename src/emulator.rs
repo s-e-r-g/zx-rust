@@ -192,7 +192,7 @@ impl MachineZxSpectrum48 {
 
     pub fn load_rom(&mut self) {
         let mut loaded = false;
-        let rom_name = "Robik48.rom";
+        let rom_name = "48.rom";
         if let Ok(rom) = std::fs::read(rom_name) {
             // Check if it looks like a valid ROM (exact size for 48K ROM)
             if rom.len() == 16384 {

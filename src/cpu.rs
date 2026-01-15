@@ -2,7 +2,8 @@
 //!
 //! This module implements a complete Z80 CPU emulator with full instruction set support.
 
-use std::iter::Enumerate;
+
+use core::panic;
 
 use crate::emulator::{Bus, Memory};
 
@@ -223,7 +224,11 @@ impl Z80 {
         }
 
         // Fetch opcode
+        //let pc = self.pc;
         let opcode = self.read_byte_pc(bus);
+        //println!("{:04X} : {:02X} - HL={:04X} : {:02X}", pc, opcode, self.get_hl(), bus.read_byte(self.get_hl()));
+
+        // Increment R register (7 bits only)
         self.r = (self.r & 0x80) | ((self.r + 1) & 0x7F);
 
         match opcode {
@@ -2073,7 +2078,7 @@ impl Z80 {
                 let bit_set = (val & (1 << bit)) != 0;
                 self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
                 // F_X and F_Y are copied from corresponding bits of the operand being tested (val)
-                self.f |= (val & (F_Y | F_X));
+                self.f |= val & (F_Y | F_X);
                 8
             }
             0x80..=0xBF => { // RES b, r
@@ -2116,18 +2121,67 @@ impl Z80 {
                     8
                 }
             }
-            56_u8..=63_u8 => todo!()
+            _ => {
+                panic!("Unimplemented CB opcode: 0x{:02X}", opcode);
+            }
         }
     }
 
     fn step_ed(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
+            0x00..=0x3F => { // Unused ED opcodes
+                8 // NOP
+            }
+            0x40 => { // IN B, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.b = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
+            0x41 => { // OUT (C), B
+                bus.write_port(self.get_bc(), self.b);
+                12
+            }
+            0x42 => { // SBC HL, BC
+                let hl = self.get_hl() as u32;
+                let bc = self.get_bc() as u32;
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let result = hl.wrapping_sub(bc).wrapping_sub(carry);
+                self.set_hl(result as u16);
+                let result_u16 = result as u16;
+                let overflow = ((hl ^ bc) & (hl ^ result)) & 0x8000 != 0;
+                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
+                         (if result_u16 == 0 { F_Z } else { 0 }) |
+                         (if overflow { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFFFF { F_C } else { 0 }) |
+                         (if ((hl ^ bc ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                15
+            }
             0x43 => { // LD (nn), BC
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.c);
                 bus.write_byte(nn.wrapping_add(1), self.b);
                 20
+            }
+            0x44 => { // NEG
+                let val = self.a;
+                let result = 0u16.wrapping_sub(val as u16);
+                self.a = result as u8;
+                self.f = (if self.a == 0 { F_Z } else { 0 }) |
+                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
+                         (if Self::parity(self.a) { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFF { F_C } else { 0 }) |
+                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                8
+            }
+            0x45 => { // RETN
+                self.pc = self.pop(bus);
+                self.iff1 = self.iff2;
+                14
             }
             0x46 => { // IM 0
                 self.im = InterruptMode::IM0;
@@ -2137,10 +2191,52 @@ impl Z80 {
                 self.i = self.a;
                 9
             }
-            0x4E => { // IM 0
+            0x48 => { // IN C, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.c = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
+            0x49 => { // OUT (C), C
+                bus.write_port(self.get_bc(), self.c);
+                12
+            }
+            0x4A => { // ADC HL, BC
+                let hl = self.get_hl() as u32;
+                let bc = self.get_bc() as u32;
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let result = hl.wrapping_add(bc).wrapping_add(carry);
+                self.set_hl(result as u16);
+                let result_u16 = result as u16;
+                let overflow = !((hl ^ bc) & 0x8000 != 0) && ((hl ^ result) & (bc ^ result)) & 0x8000 != 0;
+                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
+                         (if result_u16 == 0 { F_Z } else { 0 }) |
+                         (if overflow { F_PV } else { 0 }) |
+                         (if result > 0xFFFF { F_C } else { 0 }) |
+                         (if ((hl ^ bc ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                15
+            }
+            0x4B => { // LD BC, (nn)
+                let nn = self.read_word_pc(bus);
+                self.set_bc(nn);
+                20
+            }
+            0x4C => { // Unused ED opcode
+                8 // NOP
+            }
+            0x4D => { // RETI
+                self.pc = self.pop(bus);
+                14
+            }
+            0x4E => { // Undocumented : IM 0
                 self.im = InterruptMode::IM0;
                 8
             }
+            0x51 => { // OUT (C), D
+                bus.write_port(self.get_bc(), self.d);
+                12
+            }            
             0x52 => { // SBC HL, DE
                 let hl = self.get_hl() as u32;
                 let de = self.get_de() as u32;
@@ -2167,38 +2263,14 @@ impl Z80 {
                 self.im = InterruptMode::IM1;
                 8
             }
-            0x5E => { // IM 2
-                self.im = InterruptMode::IM2;
-                8
-            }
-            0x78 => { // IN A, (C)
-                let port = self.get_bc();
-                let val = bus.read_port(port);
-                self.a = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
-                12
-            }
-            0x7B => { // LD SP, (nn)
-                let nn = self.read_word_pc(bus);
-                let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
-                self.sp = val;
-                20
-            }
-            0x41 => { // OUT (C), B
-                bus.write_port(self.get_bc(), self.b);
-                12
-            }
-            0x49 => { // OUT (C), C
-                bus.write_port(self.get_bc(), self.c);
-                12
-            }
-            0x51 => { // OUT (C), D
-                bus.write_port(self.get_bc(), self.d);
-                12
-            }
+
             0x59 => { // OUT (C), E
                 bus.write_port(self.get_bc(), self.e);
                 12
+            }
+            0x5E => { // IM 2
+                self.im = InterruptMode::IM2;
+                8
             }
             0x61 => { // OUT (C), H
                 bus.write_port(self.get_bc(), self.h);
@@ -2212,9 +2284,75 @@ impl Z80 {
                 bus.write_port(self.get_bc(), 0);
                 12
             }
+            0x78 => { // IN A, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.a = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
             0x79 => { // OUT (C), A
                 bus.write_port(self.get_bc(), self.a);
                 12
+            }
+            0x7B => { // LD SP, (nn)
+                let nn = self.read_word_pc(bus);
+                let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
+                self.sp = val;
+                20
+            }
+            0xA0 => { // LDI
+                let val = bus.read_byte(self.get_hl());
+                bus.write_byte(self.get_de(), val);
+                let hl = self.get_hl().wrapping_add(1);
+                self.set_hl(hl);
+                let de = self.get_de().wrapping_add(1);
+                self.set_de(de);
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+                self.f &= !(F_H | F_N | F_PV);
+                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (self.a & (F_Y | F_X));
+                16
+            }
+            0xA1 => { // CPI
+                let val = bus.read_byte(self.get_hl());
+                let result = self.a.wrapping_sub(val);
+                let hl = self.get_hl().wrapping_add(1);
+                self.set_hl(hl);
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+                self.f = (self.f & F_C) |
+                         (if (result & 0x80) != 0 { F_S } else { 0 }) |
+                         (if result == 0 { F_Z } else { 0 }) |
+                         (if ((self.a ^ val ^ result) & 0x10) != 0 { F_H } else { 0 }) |
+                         F_N |
+                         (if bc != 0 { F_PV } else { 0 }) |
+                         (self.a.wrapping_add( ((self.f & F_C) != 0) as u8 ) & (F_Y | F_X));
+                16
+            }
+            0xA2 => { // INI
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                bus.write_byte(self.get_de(), val);
+                let de = self.get_de().wrapping_add(1);
+                self.set_de(de);
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+                self.f &= !(F_H | F_N | F_PV);
+                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
+                16
+            }
+            0xA3 => { // OUTI
+                let port = self.get_bc();
+                let val = bus.read_byte(self.get_hl());
+                bus.write_port(port, val);
+                let hl = self.get_hl().wrapping_add(1);
+                self.set_hl(hl);
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+                self.f &= !(F_H | F_N | F_PV);
+                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
+                16
             }
             0xB0 => { // LDIR
                 let mut tstates = 0u32;
@@ -2248,22 +2386,8 @@ impl Z80 {
                 }
                 tstates
             }
-            0xA0 => { // LDI
-                let val = bus.read_byte(self.get_hl());
-                bus.write_byte(self.get_de(), val);
-                let hl = self.get_hl().wrapping_add(1);
-                self.set_hl(hl);
-                let de = self.get_de().wrapping_add(1);
-                self.set_de(de);
-                let bc = self.get_bc().wrapping_sub(1);
-                self.set_bc(bc);
-                self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (self.a & (F_Y | F_X));
-                16
-            }
             _ => {
-                println!("Unimplemented ED opcode: {:02X}", opcode);
-                8
+                panic!("Unimplemented ED opcode: 0x{:02X}", opcode);
             }
         }
     }
@@ -2762,8 +2886,7 @@ impl Z80 {
                 10
             }
             _ => {
-                println!("Unimplemented DD opcode: {:02X}", opcode);
-                8
+                panic!("Unimplemented DD opcode: {:02X}", opcode);
             }
         }
     }
@@ -3426,8 +3549,7 @@ impl Z80 {
                 23
             }
             _ => {
-                println!("Unimplemented FDCB opcode: {:02X}", opcode);
-                8
+                panic!("Unimplemented FDCB opcode: {:02X}", opcode);
             }
         }
     }
@@ -5016,5 +5138,35 @@ mod tests {
         assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
         assert_eq!(machine.cpu.f & F_N, F_N); // N set
         assert_eq!(cycles, 11);
+    }
+
+    #[test]
+    fn test_ed_45_retn() {
+        let mut machine = TestMachine::new(Some(vec![0xED, 0x45])); // RETN
+        machine.cpu.sp = 0xFFFC;
+        machine.ram[0xFFFC] = 0x34; // Low byte of return address
+        machine.ram[0xFFFD] = 0x12; // High byte of return address
+        machine.cpu.iff2 = true; // Set IFF2 to true
+        machine.cpu.iff1 = false; // Set IFF1 to false
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.pc, 0x1234);
+        assert_eq!(machine.cpu.sp, 0xFFFE);
+        assert_eq!(machine.cpu.iff1, true); // IFF1 should be restored from IFF2
+        assert_eq!(cycles, 14);
+    }
+
+    #[test]
+    fn test_ed_4d_reti() {
+        let mut machine = TestMachine::new(Some(vec![0xED, 0x4D])); // RETI
+        machine.cpu.sp = 0xFFFC;
+        machine.ram[0xFFFC] = 0x78; // Low byte of return address
+        machine.ram[0xFFFD] = 0x56; // High byte of return address
+        machine.cpu.iff2 = true; // Set IFF2 to true
+        machine.cpu.iff1 = false; // Set IFF1 to false
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.pc, 0x5678);
+        assert_eq!(machine.cpu.sp, 0xFFFE);
+        assert_eq!(machine.cpu.iff1, false); // IFF1 should be unaffected from IFF2
+        assert_eq!(cycles, 14);
     }
 }
