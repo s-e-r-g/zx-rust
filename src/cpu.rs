@@ -2,7 +2,7 @@
 //!
 //! This module implements a complete Z80 CPU emulator with full instruction set support.
 
-use crate::emulator::Memory;
+use crate::emulator::{Bus, Memory};
 
 // Z80 CPU Flag register bits
 const F_S: u8 = 0x80;   // Sign flag
@@ -144,7 +144,7 @@ impl Z80 {
         if Self::parity(res) { self.f |= F_PV; }
     }
 
-    pub fn step(&mut self, bus: &mut dyn Memory) -> u32 {
+    pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
         if self.int_requested {
             self.int_requested = false;
             // Handle interrupt
@@ -1583,7 +1583,7 @@ impl Z80 {
         }
     }
 
-    fn step_cb(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_cb(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
             0x00 => { // RLC B
@@ -1665,7 +1665,7 @@ impl Z80 {
         }
     }
 
-    fn step_ed(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_ed(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
             0x43 => { // LD (nn), BC
@@ -1705,10 +1705,8 @@ impl Z80 {
                 8
             }
             0x78 => { // IN A, (C)
-                // Mock input: read from port BC
-                // Since bus is Memory, not Ports, use a mock value
                 let port = self.get_bc();
-                let val = 0xFF; // Mock input value
+                let val = bus.read_port(port);
                 self.a = val;
                 self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
@@ -1718,6 +1716,38 @@ impl Z80 {
                 let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
                 self.sp = val;
                 20
+            }
+            0x41 => { // OUT (C), B
+                bus.write_port(self.get_bc(), self.b);
+                12
+            }
+            0x49 => { // OUT (C), C
+                bus.write_port(self.get_bc(), self.c);
+                12
+            }
+            0x51 => { // OUT (C), D
+                bus.write_port(self.get_bc(), self.d);
+                12
+            }
+            0x59 => { // OUT (C), E
+                bus.write_port(self.get_bc(), self.e);
+                12
+            }
+            0x61 => { // OUT (C), H
+                bus.write_port(self.get_bc(), self.h);
+                12
+            }
+            0x69 => { // OUT (C), L
+                bus.write_port(self.get_bc(), self.l);
+                12
+            }
+            0x71 => { // OUT (C), 0
+                bus.write_port(self.get_bc(), 0);
+                12
+            }
+            0x79 => { // OUT (C), A
+                bus.write_port(self.get_bc(), self.a);
+                12
             }
             0xB0 => { // LDIR
                 let mut tstates = 0u32;
@@ -1758,7 +1788,7 @@ impl Z80 {
         }
     }
 
-    fn step_dd(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_dd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
             // Implement DD opcodes here
@@ -1772,7 +1802,7 @@ impl Z80 {
         }
     }
 
-    fn step_ddcb(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_ddcb(&mut self, bus: &mut dyn Bus) -> u32 {
         let d = self.read_byte_pc(bus) as i8 as i16;
         let addr = self.ix.wrapping_add(d as u16);
         let opcode = self.read_byte_pc(bus);
@@ -1854,7 +1884,7 @@ impl Z80 {
         }
     }
 
-    fn step_fd(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_fd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
             0x21 => { // LD IY, nn
@@ -1897,7 +1927,7 @@ impl Z80 {
         }
     }
 
-    fn step_fdcb(&mut self, bus: &mut dyn Memory) -> u32 {
+    fn step_fdcb(&mut self, bus: &mut dyn Bus) -> u32 {
         let d = self.read_byte_pc(bus) as i8 as i16;
         let addr = self.iy.wrapping_add(d as u16);
         let opcode = self.read_byte_pc(bus);

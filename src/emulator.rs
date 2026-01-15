@@ -55,6 +55,8 @@ pub trait Ports {
     fn write_port(&mut self, port: u16, val: u8);
 }
 
+pub trait Bus: Memory + Ports {}
+
 struct Ula {
     framebuffer: Vec<u8>, // RGBA bytes
     h_counter: usize,
@@ -167,6 +169,18 @@ impl Ports for MachineZxSpectrum48 {
 }
 
 
+impl Memory for MachineZxSpectrum48 {
+    fn read_byte(&self, addr: u16) -> u8 {
+        self.memory.read_byte(addr)
+    }
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        self.memory.write_byte(addr, val)
+    }
+}
+
+impl Bus for MachineZxSpectrum48 {}
+
+
 impl MachineZxSpectrum48 {
     pub fn new() -> Self {
         let mut machine = Self {
@@ -220,7 +234,13 @@ impl MachineZxSpectrum48 {
 
         while !self.frame_ready {
             // Execute one CPU instruction
-            let t_states = self.cpu.step(&mut self.memory);
+            let t_states = unsafe {
+
+                let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
+
+                self.cpu.step(bus)
+
+            };
             for _ in 0..t_states {
                 self.ula.tick(&self.memory, self.border_color);
                 self.t_states += 1;
