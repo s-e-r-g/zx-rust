@@ -3981,6 +3981,367 @@ mod tests {
     }
 
     #[test]
+    fn test_fd_09_add_iy_bc() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x09])); // ADD IY, BC
+        machine.cpu.iy = 0x1000;
+        machine.cpu.set_bc(0x2000);
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x3000);
+        assert_eq!(cycles, 15);
+    }
+
+    #[test]
+    fn test_fd_19_add_iy_de() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x19])); // ADD IY, DE
+        machine.cpu.iy = 0x1000;
+        machine.cpu.set_de(0x2000);
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x3000);
+        assert_eq!(cycles, 15);
+    }
+
+    #[test]
+    fn test_fd_23_inc_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x23])); // INC IY
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1235);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_fd_24_inc_iyh() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x24])); // INC IYH
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1334);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_25_dec_iyh() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x25])); // DEC IYH
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1134);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_26_ld_iyh_n() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x26, 0xAB])); // LD IYH, n
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0xAB34);
+        assert_eq!(cycles, 11);
+    }
+
+    #[test]
+    fn test_fd_29_add_iy_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x29])); // ADD IY, IY
+        machine.cpu.iy = 0x1000;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x2000);
+        assert_eq!(cycles, 15);
+    }
+
+    #[test]
+    fn test_fd_2a_ld_iy_nn() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x2A, 0x00, 0x10])); // LD IY, (nn)
+        machine.ram[0x1000] = 0x34;
+        machine.ram[0x1001] = 0x12;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1234);
+        assert_eq!(cycles, 20);
+    }
+
+    #[test]
+    fn test_fd_2b_dec_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x2B])); // DEC IY
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1233);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_fd_2c_inc_iyl() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x2C])); // INC IYL
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1235);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_2d_dec_iyl() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x2D])); // DEC IYL
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1233);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_2e_ld_iyl_n() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x2E, 0xAB])); // LD IYL, n
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x12AB);
+        assert_eq!(cycles, 11);
+    }
+
+    #[test]
+    fn test_fd_34_inc_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x34, 0x05])); // INC (IY+d)
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 10;
+        let cycles = machine.step();
+        assert_eq!(machine.ram[0x1005], 11);
+        assert_eq!(cycles, 23);
+    }
+
+    #[test]
+    fn test_fd_39_add_iy_sp() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x39])); // ADD IY, SP
+        machine.cpu.iy = 0x1000;
+        machine.cpu.sp = 0x2000;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x3000);
+        assert_eq!(cycles, 15);
+    }
+
+    #[test]
+    fn test_fd_44_ld_b_iyh() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x44])); // LD B, IYH
+        machine.cpu.iy = 0xAB34;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.b, 0xAB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_45_ld_b_iyl() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x45])); // LD B, IYL
+        machine.cpu.iy = 0x12AB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.b, 0xAB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_46_ld_b_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x46, 0x05])); // LD B, (IY+d)
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0xCD;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.b, 0xCD);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_60_ld_iyh_b() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x60])); // LD IYH, B
+        machine.cpu.iy = 0x1234;
+        machine.cpu.b = 0xAB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0xAB34);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_61_ld_iyh_c() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x61])); // LD IYH, C
+        machine.cpu.iy = 0x1234;
+        machine.cpu.c = 0xAB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0xAB34);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_68_ld_iyl_b() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x68])); // LD IYL, B
+        machine.cpu.iy = 0x1234;
+        machine.cpu.b = 0xAB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x12AB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_70_ld_iy_d_b() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x70, 0x05])); // LD (IY+d), B
+        machine.cpu.iy = 0x1000;
+        machine.cpu.b = 0xCD;
+        let cycles = machine.step();
+        assert_eq!(machine.ram[0x1005], 0xCD);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_77_ld_iy_d_a() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x77, 0x05])); // LD (IY+d), A
+        machine.cpu.iy = 0x1000;
+        machine.cpu.a = 0xCD;
+        let cycles = machine.step();
+        assert_eq!(machine.ram[0x1005], 0xCD);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_7c_ld_a_iyh() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x7C])); // LD A, IYH
+        machine.cpu.iy = 0xAB34;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xAB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_7d_ld_a_iyl() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x7D])); // LD A, IYL
+        machine.cpu.iy = 0x12AB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xAB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_7e_ld_a_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x7E, 0x05])); // LD A, (IY+d)
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0xCD;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xCD);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_84_add_a_iyh() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x84])); // ADD A, IYH
+        machine.cpu.a = 0x10;
+        machine.cpu.iy = 0xAB34;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xBB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_85_add_a_iyl() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x85])); // ADD A, IYL
+        machine.cpu.a = 0x10;
+        machine.cpu.iy = 0x12AB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xBB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_86_add_a_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0x86, 0x05])); // ADD A, (IY+d)
+        machine.cpu.a = 0x10;
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0x20;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0x30);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_a6_and_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xA6, 0x05])); // AND (IY+d)
+        machine.cpu.a = 0xF0;
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0x0F;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0x00);
+        assert_eq!(machine.cpu.f & F_Z, F_Z);
+        assert_eq!(machine.cpu.f & F_H, F_H);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_ae_xor_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xAE, 0x05])); // XOR (IY+d)
+        machine.cpu.a = 0xF0;
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0x0F;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.a, 0xFF);
+        assert_eq!(machine.cpu.f & F_Z, 0);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_be_cp_iy_d() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xBE, 0x05])); // CP (IY+d)
+        machine.cpu.a = 0x10;
+        machine.cpu.iy = 0x1000;
+        machine.ram[0x1005] = 0x20;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.f & F_S, F_S); // negative result
+        assert_eq!(machine.cpu.f & F_C, F_C); // borrow
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_e1_pop_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xE1])); // POP IY
+        machine.cpu.sp = 0x2000;
+        machine.ram[0x2000] = 0x34;
+        machine.ram[0x2001] = 0x12;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0x1234);
+        assert_eq!(machine.cpu.sp, 0x2002);
+        assert_eq!(cycles, 14);
+    }
+
+    #[test]
+    fn test_fd_e3_ex_sp_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xE3])); // EX (SP), IY
+        machine.cpu.iy = 0x1234;
+        machine.cpu.sp = 0x2000;
+        machine.ram[0x2000] = 0xCD;
+        machine.ram[0x2001] = 0xAB;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.iy, 0xABCD);
+        assert_eq!(machine.ram[0x2000], 0x12);
+        assert_eq!(machine.ram[0x2001], 0x34);
+        assert_eq!(cycles, 23);
+    }
+
+    #[test]
+    fn test_fd_e5_push_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xE5])); // PUSH IY
+        machine.cpu.iy = 0x1234;
+        machine.cpu.sp = 0x2002;
+        let cycles = machine.step();
+        assert_eq!(machine.ram[0x2000], 0x12);
+        assert_eq!(machine.ram[0x2001], 0x34);
+        assert_eq!(machine.cpu.sp, 0x2000);
+        assert_eq!(cycles, 15);
+    }
+
+    #[test]
+    fn test_fd_e9_jp_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xE9])); // JP (IY)
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.pc, 0x1234);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_fd_f9_ld_sp_iy() {
+        let mut machine = TestMachine::new(Some(vec![0xFD, 0xF9])); // LD SP, IY
+        machine.cpu.iy = 0x1234;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.sp, 0x1234);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
     fn test_40_ld_b_b() {
         let mut machine = TestMachine::new(Some(vec![0x40])); // LD B, B
         machine.cpu.b = 0x42;
