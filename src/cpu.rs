@@ -2180,19 +2180,7 @@ mod tests {
     impl Bus for TestMemory {}
 
     #[test]
-    fn test_ld_a_n() {
-        let mut cpu = Z80::new();
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0x3E; // LD A, n
-        mem.ram[1] = 0x42; // n = 0x42
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.a, 0x42);
-        assert_eq!(cycles, 7);
-        assert_eq!(cpu.pc, 2);
-    }
-
-    #[test]
-    fn test_nop() {
+    fn test_00_nop() {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0x00; // NOP
@@ -2202,20 +2190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_a_b() {
-        let mut cpu = Z80::new();
-        cpu.a = 5;
-        cpu.b = 3;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0x80; // ADD A, B
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.a, 8);
-        assert_eq!(cycles, 4);
-        assert_eq!(cpu.pc, 1);
-    }
-
-    #[test]
-    fn test_ld_bc_nn() {
+    fn test_01_ld_bc_nn() {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0x01; // LD BC, nn
@@ -2228,33 +2203,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ld_hl_nn() {
-        let mut cpu = Z80::new();
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0x21; // LD HL, nn
-        mem.ram[1] = 0x78;
-        mem.ram[2] = 0x56;
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.get_hl(), 0x5678);
-        assert_eq!(cycles, 10);
-        assert_eq!(cpu.pc, 3);
-    }
-
-    #[test]
-    fn test_ld_a_bc() {
-        let mut cpu = Z80::new();
-        cpu.set_bc(0x1234);
-        let mut mem = TestMemory::new();
-        mem.ram[0x1234] = 0xAB;
-        mem.ram[0] = 0x0A; // LD A, (BC)
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.a, 0xAB);
-        assert_eq!(cycles, 7);
-        assert_eq!(cpu.pc, 1);
-    }
-
-    #[test]
-    fn test_ld_bc_a() {
+    fn test_02_ld_bc_a() {
         let mut cpu = Z80::new();
         cpu.a = 0xCD;
         cpu.set_bc(0x1234);
@@ -2267,7 +2216,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inc_b() {
+    fn test_04_inc_b() {
         let mut cpu = Z80::new();
         cpu.b = 5;
         let mut mem = TestMemory::new();
@@ -2279,19 +2228,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dec_c() {
-        let mut cpu = Z80::new();
-        cpu.c = 10;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0x0D; // DEC C
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.c, 9);
-        assert_eq!(cycles, 4);
-        assert_eq!(cpu.pc, 1);
-    }
-
-    #[test]
-    fn test_add_hl_bc() {
+    fn test_09_add_hl_bc() {
         let mut cpu = Z80::new();
         cpu.set_hl(0x1000);
         cpu.set_bc(0x2000);
@@ -2304,7 +2241,82 @@ mod tests {
     }
 
     #[test]
-    fn test_add_a_b_flags() {
+    fn test_0a_ld_a_bc() {
+        let mut cpu = Z80::new();
+        cpu.set_bc(0x1234);
+        let mut mem = TestMemory::new();
+        mem.ram[0x1234] = 0xAB;
+        mem.ram[0] = 0x0A; // LD A, (BC)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xAB);
+        assert_eq!(cycles, 7);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_0d_dec_c() {
+        let mut cpu = Z80::new();
+        cpu.c = 10;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x0D; // DEC C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.c, 9);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_20_jr_nz() {
+        let mut cpu = Z80::new();
+        cpu.f = 0; // Z=0
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x20; // JR NZ, n
+        mem.ram[1] = 5; // +5
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 7); // 2 + 5
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_21_ld_hl_nn() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x21; // LD HL, nn
+        mem.ram[1] = 0x78;
+        mem.ram[2] = 0x56;
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.get_hl(), 0x5678);
+        assert_eq!(cycles, 10);
+        assert_eq!(cpu.pc, 3);
+    }
+
+    #[test]
+    fn test_3e_ld_a_n() {
+        let mut cpu = Z80::new();
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x3E; // LD A, n
+        mem.ram[1] = 0x42; // n = 0x42
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0x42);
+        assert_eq!(cycles, 7);
+        assert_eq!(cpu.pc, 2);
+    }
+
+    #[test]
+    fn test_80_add_a_b() {
+        let mut cpu = Z80::new();
+        cpu.a = 5;
+        cpu.b = 3;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0x80; // ADD A, B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 8);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_80_add_a_b_flags() {
         let mut cpu = Z80::new();
         cpu.a = 0x7F; // 127
         cpu.b = 0x01; // 1
@@ -2314,7 +2326,8 @@ mod tests {
         assert_eq!(cpu.a, 0x80); // 128, -128
         assert_eq!(cpu.f & F_S, F_S); // sign set
         assert_eq!(cpu.f & F_Z, 0); // not zero
-        assert_eq!(cpu.f & F_C, 0); // no carry
+        assert_eq!
+(cpu.f & F_C, 0); // no carry
         assert_eq!(cpu.f & F_H, F_H); // half carry
         assert_eq!(cpu.f & F_PV, F_PV); // overflow
         assert_eq!(cpu.f & F_N, 0); // N reset
@@ -2322,7 +2335,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sub_b() {
+    fn test_90_sub_b() {
         let mut cpu = Z80::new();
         cpu.a = 10;
         cpu.b = 3;
@@ -2335,7 +2348,7 @@ mod tests {
     }
 
     #[test]
-    fn test_and_b() {
+    fn test_a0_and_b() {
         let mut cpu = Z80::new();
         cpu.a = 0x0F;
         cpu.b = 0x0A;
@@ -2348,20 +2361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_or_c() {
-        let mut cpu = Z80::new();
-        cpu.a = 0x0F;
-        cpu.c = 0xF0;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xB1; // OR C
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.a, 0xFF);
-        assert_eq!(cycles, 4);
-        assert_eq!(cpu.pc, 1);
-    }
-
-    #[test]
-    fn test_xor_d() {
+    fn test_aa_xor_d() {
         let mut cpu = Z80::new();
         cpu.a = 0xAA;
         cpu.d = 0x55;
@@ -2374,7 +2374,20 @@ mod tests {
     }
 
     #[test]
-    fn test_cp_e() {
+    fn test_b1_or_c() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x0F;
+        cpu.c = 0xF0;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xB1; // OR C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF);
+        assert_eq!(cycles, 4);
+        assert_eq!(cpu.pc, 1);
+    }
+
+    #[test]
+    fn test_bb_cp_e() {
         let mut cpu = Z80::new();
         cpu.a = 10;
         cpu.e = 5;
@@ -2387,7 +2400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_jp_nn() {
+    fn test_c3_jp_nn() {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0xC3; // JP nn
@@ -2399,19 +2412,84 @@ mod tests {
     }
 
     #[test]
-    fn test_jr_nz() {
+    fn test_c5_push_bc() {
         let mut cpu = Z80::new();
-        cpu.f = 0; // Z=0
+        cpu.sp = 0xFFFE;
+        cpu.set_bc(0x1234);
         let mut mem = TestMemory::new();
-        mem.ram[0] = 0x20; // JR NZ, n
-        mem.ram[1] = 5; // +5
+        mem.ram[0] = 0xC5; // PUSH BC
         let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.pc, 7); // 2 + 5
-        assert_eq!(cycles, 12);
+        assert_eq!(cpu.sp, 0xFFFC);
+        assert_eq!(mem.ram[0xFFFC], 0x12);
+        assert_eq!(mem.ram[0xFFFD], 0x34);
+        assert_eq!(cycles, 11);
     }
 
     #[test]
-    fn test_call_nn() {
+    fn test_c9_ret() {
+        let mut cpu = Z80::new();
+        cpu.sp = 0xFFFC;
+        let mut mem = TestMemory::new();
+        mem.ram[0xFFFC] = 0x34;
+        mem.ram[0xFFFD] = 0x12;
+        mem.ram[0] = 0xC9; // RET
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.pc, 0x1234);
+        assert_eq!(cpu.sp, 0xFFFE);
+        assert_eq!(cycles, 10);
+    }
+
+    #[test]
+    fn test_cb_00_rlc_b() {
+        let mut cpu = Z80::new();
+        cpu.b = 0x85; // 10000101
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x00; // RLC B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.b, 0x0B); // 00001011, C=1
+        assert_eq!(cpu.f & F_C, F_C);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_cb_40_bit_0_b() {
+        let mut cpu = Z80::new();
+        cpu.b = 0x01; // bit 0 set
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x40; // BIT 0, B
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.f & F_Z, 0); // not zero
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_cb_92_res_2_d() {
+        let mut cpu = Z80::new();
+        cpu.d = 0xFF;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0x92; // RES 2, D
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.d, 0xFB);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_cb_c9_set_1_c() {
+        let mut cpu = Z80::new();
+        cpu.c = 0x00;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xCB;
+        mem.ram[1] = 0xC9; // SET 1, C
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.c, 0x02);
+        assert_eq!(cycles, 8);
+    }
+
+    #[test]
+    fn test_cd_call_nn() {
         let mut cpu = Z80::new();
         cpu.sp = 0xFFFE;
         let mut mem = TestMemory::new();
@@ -2427,35 +2505,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ret() {
-        let mut cpu = Z80::new();
-        cpu.sp = 0xFFFC;
-        let mut mem = TestMemory::new();
-        mem.ram[0xFFFC] = 0x34;
-        mem.ram[0xFFFD] = 0x12;
-        mem.ram[0] = 0xC9; // RET
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.pc, 0x1234);
-        assert_eq!(cpu.sp, 0xFFFE);
-        assert_eq!(cycles, 10);
-    }
-
-    #[test]
-    fn test_push_bc() {
-        let mut cpu = Z80::new();
-        cpu.sp = 0xFFFE;
-        cpu.set_bc(0x1234);
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xC5; // PUSH BC
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.sp, 0xFFFC);
-        assert_eq!(mem.ram[0xFFFC], 0x12);
-        assert_eq!(mem.ram[0xFFFD], 0x34);
-        assert_eq!(cycles, 11);
-    }
-
-    #[test]
-    fn test_pop_de() {
+    fn test_d1_pop_de() {
         let mut cpu = Z80::new();
         cpu.sp = 0xFFFC;
         let mut mem = TestMemory::new();
@@ -2469,7 +2519,32 @@ mod tests {
     }
 
     #[test]
-    fn test_ldi() {
+    fn test_ed_78_in_a_c() {
+        let mut cpu = Z80::new();
+        cpu.set_bc(0xFE00);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0x78; // IN A, (C)
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(cpu.a, 0xFF); // from test port
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_ed_79_out_c_a() {
+        let mut cpu = Z80::new();
+        cpu.a = 0x42;
+        cpu.set_bc(0xFE00);
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xED;
+        mem.ram[1] = 0x79; // OUT (C), A
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        // write_port called with 0xFE00, 0x42
+        assert_eq!(cycles, 12);
+    }
+
+    #[test]
+    fn test_ed_a0_ldi() {
         let mut cpu = Z80::new();
         cpu.set_hl(0x1000);
         cpu.set_de(0x2000);
@@ -2487,7 +2562,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ldir() {
+    fn test_ed_b0_ldir() {
         let mut cpu = Z80::new();
         cpu.set_hl(0x1000);
         cpu.set_de(0x2000);
@@ -2509,81 +2584,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rlc_b() {
-        let mut cpu = Z80::new();
-        cpu.b = 0x85; // 10000101
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xCB;
-        mem.ram[1] = 0x00; // RLC B
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.b, 0x0B); // 00001011, C=1
-        assert_eq!(cpu.f & F_C, F_C);
-        assert_eq!(cycles, 8);
-    }
-
-    #[test]
-    fn test_bit_0_b() {
-        let mut cpu = Z80::new();
-        cpu.b = 0x01; // bit 0 set
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xCB;
-        mem.ram[1] = 0x40; // BIT 0, B
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.f & F_Z, 0); // not zero
-        assert_eq!(cycles, 8);
-    }
-
-    #[test]
-    fn test_set_1_c() {
-        let mut cpu = Z80::new();
-        cpu.c = 0x00;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xCB;
-        mem.ram[1] = 0xC9; // SET 1, C
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.c, 0x02);
-        assert_eq!(cycles, 8);
-    }
-
-    #[test]
-    fn test_res_2_d() {
-        let mut cpu = Z80::new();
-        cpu.d = 0xFF;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xCB;
-        mem.ram[1] = 0x92; // RES 2, D
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.d, 0xFB);
-        assert_eq!(cycles, 8);
-    }
-
-    #[test]
-    fn test_in_a_c() {
-        let mut cpu = Z80::new();
-        cpu.set_bc(0xFE00);
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xED;
-        mem.ram[1] = 0x78; // IN A, (C)
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(cpu.a, 0xFF); // from test port
-        assert_eq!(cycles, 12);
-    }
-
-    #[test]
-    fn test_out_c_a() {
-        let mut cpu = Z80::new();
-        cpu.a = 0x42;
-        cpu.set_bc(0xFE00);
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xED;
-        mem.ram[1] = 0x79; // OUT (C), A
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        // write_port called with 0xFE00, 0x42
-        assert_eq!(cycles, 12);
-    }
-
-    #[test]
-    fn test_ld_iy_nn() {
+    fn test_fd_21_ld_iy_nn() {
         let mut cpu = Z80::new();
         let mut mem = TestMemory::new();
         mem.ram[0] = 0xFD;
@@ -2596,21 +2597,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ld_iy_d_n() {
-        let mut cpu = Z80::new();
-        cpu.iy = 0x1000;
-        let mut mem = TestMemory::new();
-        mem.ram[0] = 0xFD;
-        mem.ram[1] = 0x36; // LD (IY+d), n
-        mem.ram[2] = 0x10; // d=16
-        mem.ram[3] = 0xAB; // n
-        let cycles = cpu.step(&mut mem as &mut dyn Bus);
-        assert_eq!(mem.ram[0x1010], 0xAB);
-        assert_eq!(cycles, 19);
-    }
-
-    #[test]
-    fn test_dec_iy_d() {
+    fn test_fd_35_dec_iy_d() {
         let mut cpu = Z80::new();
         cpu.iy = 0x1000;
         let mut mem = TestMemory::new();
@@ -2624,7 +2611,21 @@ mod tests {
     }
 
     #[test]
-    fn test_rlc_iy_d() {
+    fn test_fd_36_ld_iy_d_n() {
+        let mut cpu = Z80::new();
+        cpu.iy = 0x1000;
+        let mut mem = TestMemory::new();
+        mem.ram[0] = 0xFD;
+        mem.ram[1] = 0x36; // LD (IY+d), n
+        mem.ram[2] = 0x10; // d=16
+        mem.ram[3] = 0xAB; // n
+        let cycles = cpu.step(&mut mem as &mut dyn Bus);
+        assert_eq!(mem.ram[0x1010], 0xAB);
+        assert_eq!(cycles, 19);
+    }
+
+    #[test]
+    fn test_fd_cb_06_rlc_iy_d() {
         let mut cpu = Z80::new();
         cpu.iy = 0x1000;
         let mut mem = TestMemory::new();
@@ -2639,7 +2640,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bit_3_iy_d() {
+    fn test_fd_cb_5e_bit_3_iy_d() {
         let mut cpu = Z80::new();
         cpu.iy = 0x1000;
         let mut mem = TestMemory::new();
