@@ -64,6 +64,7 @@ pub struct Z80 {
     pub im: InterruptMode,
 
     pub int_requested: bool,
+    pub halted: bool,
 }
 
 impl Z80 {
@@ -85,6 +86,7 @@ impl Z80 {
             iff2: false,
             im: InterruptMode::IM1,
             int_requested: false,
+            halted: false,
         }
     }
 
@@ -201,6 +203,14 @@ impl Z80 {
     }
 
     pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
+        if self.halted {
+            if self.int_requested {
+                self.halted = false; // Unhalt on interrupt
+            } else {
+                return 0; // CPU is halted, wait for interrupt
+            }
+        }
+
         if self.int_requested {
             self.int_requested = false;
             // Handle interrupt
@@ -265,9 +275,10 @@ impl Z80 {
                 7
             }
             0x07 => { // RLCA
-                let carry = (self.a & 0x80) != 0;
-                self.a = (self.a << 1) | if carry { 1 } else { 0 };
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if carry { F_C } else { 0 };
+                let old_a = self.a;
+                self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
+                // Flags: C = old bit 7. H=0, N=0. S, Z, PV, X, Y unaffected.
+                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x80) != 0 { F_C } else { 0 };
                 4
             }
             0x08 => { // EX AF, AF'
@@ -314,9 +325,10 @@ impl Z80 {
                 7
             }
             0x0F => { // RRCA
-                let carry = (self.a & 0x01) != 0;
-                self.a = (self.a >> 1) | if carry { 0x80 } else { 0 };
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if carry { F_C } else { 0 };
+                let old_a = self.a;
+                self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
+                // Flags: C = old bit 0. H=0, N=0. S, Z, PV, X, Y unaffected.
+                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x01) != 0 { F_C } else { 0 };
                 4
             }
             0x10 => { // DJNZ d
@@ -361,10 +373,11 @@ impl Z80 {
                 7
             }
             0x17 => { // RLA
-                let carry = (self.f & F_C) != 0;
-                let new_carry = (self.a & 0x80) != 0;
-                self.a = (self.a << 1) | if carry { 1 } else { 0 };
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if new_carry { F_C } else { 0 };
+                let old_a = self.a;
+                let old_f_c = (self.f & F_C) != 0;
+                self.a = (old_a << 1) | (if old_f_c { 1 } else { 0 });
+                // Flags: C = old bit 7. H=0, N=0. S, Z, PV, X, Y unaffected.
+                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x80) != 0 { F_C } else { 0 };
                 4
             }
             0x18 => { // JR d
@@ -408,10 +421,11 @@ impl Z80 {
                 7
             }
             0x1F => { // RRA
-                let carry = (self.f & F_C) != 0;
-                let new_carry = (self.a & 0x01) != 0;
-                self.a = (self.a >> 1) | if carry { 0x80 } else { 0 };
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if new_carry { F_C } else { 0 };
+                let old_a = self.a;
+                let old_f_c = (self.f & F_C) != 0;
+                self.a = (old_a >> 1) | (if old_f_c { 0x80 } else { 0 });
+                // Flags: C = old bit 0. H=0, N=0. S, Z, PV, X, Y unaffected.
+                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x01) != 0 { F_C } else { 0 };
                 4
             }
             0x20 => { // JR NZ, d
@@ -435,8 +449,7 @@ impl Z80 {
                 16
             }
             0x23 => { // INC HL
-                let hl = self.get_hl().wrapping_add(1);
-                self.set_hl(hl);
+                self.set_hl(self.get_hl().wrapping_add(1));
                 6
             }
             0x24 => { // INC H
@@ -498,8 +511,7 @@ impl Z80 {
                 16
             }
             0x2B => { // DEC HL
-                let hl = self.get_hl().wrapping_sub(1);
-                self.set_hl(hl);
+                self.set_hl(self.get_hl().wrapping_sub(1));
                 6
             }
             0x2C => { // INC L
@@ -831,7 +843,7 @@ impl Z80 {
                 7
             }
             0x76 => { // HALT
-                // For simplicity, treat as NOP
+                self.halted = true;
                 4
             }
             0x77 => { // LD (HL), A
@@ -1250,8 +1262,8 @@ impl Z80 {
                 }
             }
             0xC1 => { // POP BC
-                let val = self.pop(bus);
-                self.set_bc(val);
+                let bc = self.pop(bus);
+                self.set_bc(bc);
                 10
             }
             0xC2 => { // JP NZ, nn
@@ -1351,8 +1363,8 @@ impl Z80 {
                 }
             }
             0xD1 => { // POP DE
-                let val = self.pop(bus);
-                self.set_de(val);
+                let de = self.pop(bus);
+                self.set_de(de);
                 10
             }
             0xD2 => { // JP NC, nn
@@ -1460,8 +1472,8 @@ impl Z80 {
                 }
             }
             0xE1 => { // POP HL
-                let val = self.pop(bus);
-                self.set_hl(val);
+                let hl = self.pop(bus);
+                self.set_hl(hl);
                 10
             }
             0xE2 => { // JP PO, nn
@@ -1561,8 +1573,8 @@ impl Z80 {
                 }
             }
             0xF1 => { // POP AF
-                let val = self.pop(bus);
-                self.set_af(val);
+                let af = self.pop(bus);
+                self.set_af(af);
                 10
             }
             0xF2 => { // JP P, nn
@@ -2014,49 +2026,106 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x30 => { // SRL B
+            0x30 => { // SLL B (undocumented)
+                let val = self.b;
+                let new_val = (val << 1) | 0x01;
+                self.b = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x31 => { // SLL C (undocumented)
+                let val = self.c;
+                let new_val = (val << 1) | 0x01;
+                self.c = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x32 => { // SLL D (undocumented)
+                let val = self.d;
+                let new_val = (val << 1) | 0x01;
+                self.d = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x33 => { // SLL E (undocumented)
+                let val = self.e;
+                let new_val = (val << 1) | 0x01;
+                self.e = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x34 => { // SLL H (undocumented)
+                let val = self.h;
+                let new_val = (val << 1) | 0x01;
+                self.h = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x35 => { // SLL L (undocumented)
+                let val = self.l;
+                let new_val = (val << 1) | 0x01;
+                self.l = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x36 => { // SLL (HL) (undocumented)
+                let addr = self.get_hl();
+                let val = bus.read_byte(addr);
+                let new_val = (val << 1) | 0x01;
+                bus.write_byte(addr, new_val);
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                15
+            }
+            0x37 => { // SLL A (undocumented)
+                let val = self.a;
+                let new_val = (val << 1) | 0x01;
+                self.a = new_val;
+                self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
+                8
+            }
+            0x38 => { // SRL B
                 let val = self.b;
                 let new_val = val >> 1;
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x31 => { // SRL C
+            0x39 => { // SRL C
                 let val = self.c;
                 let new_val = val >> 1;
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x32 => { // SRL D
+            0x3A => { // SRL D
                 let val = self.d;
                 let new_val = val >> 1;
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x33 => { // SRL E
+            0x3B => { // SRL E
                 let val = self.e;
                 let new_val = val >> 1;
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x34 => { // SRL H
+            0x3C => { // SRL H
                 let val = self.h;
                 let new_val = val >> 1;
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x35 => { // SRL L
+            0x3D => { // SRL L
                 let val = self.l;
                 let new_val = val >> 1;
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x36 => { // SRL (HL)
+            0x3E => { // SRL (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
@@ -2064,7 +2133,7 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 15
             }
-            0x37 => { // SRL A
+            0x3F => { // SRL A
                 let val = self.a;
                 let new_val = val >> 1;
                 self.a = new_val;
@@ -2120,9 +2189,6 @@ impl Z80 {
                     self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     8
                 }
-            }
-            _ => {
-                panic!("Unimplemented CB opcode: 0x{:02X}", opcode);
             }
         }
     }
@@ -3594,6 +3660,7 @@ impl Z80 {
         
         self.im = InterruptMode::IM0;
         self.int_requested = false;
+        self.halted = false;
     }
 
     pub fn raise_int(&mut self) {
