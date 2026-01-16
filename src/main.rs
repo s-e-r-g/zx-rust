@@ -1,8 +1,9 @@
+mod cpu;
 mod emulator;
 mod screen;
 
 use eframe::egui::{self, CentralPanel};
-use emulator::Emulator;
+use emulator::{MachineZxSpectrum48};
 use screen::draw_screen;
 
 fn main() -> Result<(), eframe::Error> {
@@ -15,8 +16,8 @@ fn main() -> Result<(), eframe::Error> {
 }
 
 struct MyApp {
-    emulator: Emulator,
-    last_frame_time: std::time::Instant,
+    emulator: MachineZxSpectrum48,
+    last_frame_generation_start_time: std::time::Instant,
 }
 
 impl Default for MyApp {
@@ -26,8 +27,8 @@ impl Default for MyApp {
         //     println!("Error loading tap file: {}", e);
         // }
         Self {
-            emulator: Emulator::new(),
-            last_frame_time: std::time::Instant::now(),
+            emulator: MachineZxSpectrum48::new(),
+            last_frame_generation_start_time: std::time::Instant::now(),
         }
     }
 }
@@ -35,10 +36,9 @@ impl Default for MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = std::time::Instant::now();
-        if now.duration_since(self.last_frame_time).as_millis() >= 20 { // ~50Hz (20ms)
-            self.last_frame_time = now;
-            self.emulator.step();
-            self.emulator.render();
+        if now.duration_since(self.last_frame_generation_start_time).as_millis() >= 20 { // ~50Hz (20ms)
+            self.last_frame_generation_start_time = now;
+            self.emulator.run_until_frame();
         }
 
         CentralPanel::default().show(ctx, |ui| {
