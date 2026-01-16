@@ -2295,7 +2295,7 @@ impl Z80 {
                 self.pc = self.pop(bus);
                 14
             }
-            0x4E => { // Undocumented : IM 0
+            0x4E => { // IM 0 (undocumented)
                 self.im = InterruptMode::IM0;
                 8
             }
@@ -2325,14 +2325,82 @@ impl Z80 {
                 bus.write_byte(nn.wrapping_add(1), self.d);
                 20
             }
+            0x54 => { // NEG (undocumented)
+                let val = self.a;
+                let result = 0u16.wrapping_sub(val as u16);
+                self.a = result as u8;
+                self.f = (if self.a == 0 { F_Z } else { 0 }) |
+                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
+                         (if Self::parity(self.a) { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFF { F_C } else { 0 }) |
+                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                8
+            }
+            0x55 => { // RETN (undocumented)
+                self.pc = self.pop(bus);
+                self.iff1 = self.iff2;
+                14
+            }
             0x56 => { // IM 1
                 self.im = InterruptMode::IM1;
                 8
             }
-
+            0x57 => { // LD A, I
+                self.a = self.i;
+                self.f = (self.f & F_C) |
+                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
+                         (if self.a == 0 { F_Z } else { 0 }) |
+                         (if Self::parity(self.a) { F_PV } else { 0 });
+                9
+            }
+            0x58 => { // IN E, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.e = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
             0x59 => { // OUT (C), E
                 bus.write_port(self.get_bc(), self.e);
                 12
+            }
+            0x5A => { // ADC HL, DE
+                let hl = self.get_hl() as u32;
+                let de = self.get_de() as u32;
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let result = hl.wrapping_add(de).wrapping_add(carry);
+                self.set_hl(result as u16);
+                let result_u16 = result as u16;
+                let overflow = !((hl ^ de) & 0x8000 != 0) && ((hl ^ result) & (de ^ result)) & 0x8000 != 0;
+                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
+                         (if result_u16 == 0 { F_Z } else { 0 }) |
+                         (if overflow { F_PV } else { 0 }) |
+                         (if result > 0xFFFF { F_C } else { 0 }) |
+                         (if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                15
+            }
+            0x5B => { // LD DE, (nn)
+                let nn = self.read_word_pc(bus);
+                self.set_de(nn);
+                20
+            }
+            0x5C => { // NEG (undocumented)
+                let val = self.a;
+                let result = 0u16.wrapping_sub(val as u16);
+                self.a = result as u8;
+                self.f = (if self.a == 0 { F_Z } else { 0 }) |
+                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
+                         (if Self::parity(self.a) { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFF { F_C } else { 0 }) |
+                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                8
+            }
+            0x5D => { // RETN (undocumented)
+                self.pc = self.pop(bus);
+                self.iff1 = self.iff2;
+                14
             }
             0x5E => { // IM 2
                 self.im = InterruptMode::IM2;
