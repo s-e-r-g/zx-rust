@@ -265,7 +265,7 @@ impl Z80 {
             if self.int_requested {
                 self.halted = false; // Unhalt on interrupt
             } else {
-                return 0; // CPU is halted, wait for interrupt
+                return 4; // When HALT is executed, the CPU executes NOPs until an interrupt is received
             }
         }
 
