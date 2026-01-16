@@ -167,11 +167,7 @@ impl Z80 {
     fn set_af(&mut self, val: u16) { self.a = (val >> 8) as u8; self.f = val as u8; }
 
     fn parity(v: u8) -> bool {
-        let mut p = 0;
-        for i in 0..8 {
-            if (v & (1 << i)) != 0 { p += 1; }
-        }
-        p % 2 == 0
+        v.count_ones() % 2 == 0
     }
 
     fn set_flags_add(&mut self, a: u8, b: u8, result: u16) {
