@@ -70,24 +70,33 @@ pub struct Z80 {
 impl Z80 {
     pub fn new() -> Self {
         Self {
-            a: 0, f: 0,
+            a: 0xff, f: 0xff,
             b: 0, c: 0,
             d: 0, e: 0,
             h: 0, l: 0,
-            a_alt: 0, f_alt: 0,
+            a_alt: 0xff, f_alt: 0xff,
             b_alt: 0, c_alt: 0,
             d_alt: 0, e_alt: 0,
             h_alt: 0, l_alt: 0,
-            sp: 0,
+            sp: 0xffff,
             pc: 0,
             ix: 0, iy: 0,
             i: 0, r: 0,
-            iff1: false,
-            iff2: false,
-            im: InterruptMode::IM1,
+            iff1: true,
+            iff2: true,
+            im: InterruptMode::IM0,
             int_requested: false,
             halted: false,
         }
+    }
+
+    pub fn raise_int(&mut self) {
+        if !self.iff1 {
+            return;
+        }
+        self.iff1 = false;
+        self.iff2 = false;
+        self.int_requested = true;
     }
 
     fn push(&mut self, mem: &mut dyn Memory, value: u16) {
@@ -202,6 +211,55 @@ impl Z80 {
         if Z80::parity(result) { self.f |= F_PV; }
     }
 
+    // Helper for 16-bit ADD operations (e.g., ADD HL, BC)
+    fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32, original_f: u8) {
+        let mut new_f = original_f & (F_S | F_Z | F_PV); // Preserve S, Z, PV
+
+        new_f &= !F_N; // N flag is always reset for ADD
+
+        // C flag is set if result > 0xFFFF
+        if (result & 0x10000) != 0 {
+            new_f |= F_C;
+        }
+
+        // H flag (half carry from bit 11)
+        if ((op1 ^ op2 ^ result as u16) & 0x1000) != 0 {
+            new_f |= F_H;
+        }
+
+        // Undocumented F_X and F_Y flags (bits 3 and 5 of high byte of result)
+        new_f |= (((result as u16 >> 8) as u8) & (F_Y | F_X));
+        self.f = new_f;
+    }
+
+    // Helper for 16-bit SBC operations (e.g., SBC HL, BC)
+    fn set_hl_flags_sub(&mut self, op1: u16, op2: u16, result: i32) {
+        let result_u16 = result as u16;
+
+        self.f = F_N; // N flag is always set for SUB/SBC
+
+        if result_u16 == 0 { self.f |= F_Z; }
+        if (result_u16 & 0x8000) != 0 { self.f |= F_S; } // Sign flag from bit 15
+
+        // C flag (borrow)
+        if result < 0 { self.f |= F_C; }
+
+        // H flag (half borrow from bit 11)
+        // (op1 ^ op2 ^ result_u16) & 0x1000 checks for borrow from bit 11
+        if ((op1 ^ op2 ^ result_u16) & 0x1000) != 0 {
+            self.f |= F_H;
+        }
+
+        // P/V flag (overflow) - ((op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000) != 0
+        // (op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000 checks for overflow at bit 15
+        let overflow = ((op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000) != 0;
+        if overflow { self.f |= F_PV; }
+
+        // Undocumented F_X and F_Y flags (bits 3 and 5 of high byte of result)
+        self.f = (self.f & !(F_Y | F_X)) | (((result_u16 >> 8) as u8) & (F_Y | F_X));
+    }
+
+
     pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
         if self.halted {
             if self.int_requested {
@@ -276,9 +334,12 @@ impl Z80 {
             }
             0x07 => { // RLCA
                 let old_a = self.a;
+                let carry = (old_a & 0x80) != 0;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
-                // Flags: C = old bit 7. H=0, N=0. S, Z, PV, X, Y unaffected.
-                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x80) != 0 { F_C } else { 0 };
+                // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if carry { F_C } else { 0 }) |  // Set C flag
+                         (self.a & (F_Y | F_X));          // Set Y and X from new A
                 4
             }
             0x08 => { // EX AF, AF'
@@ -291,11 +352,11 @@ impl Z80 {
                 4
             }
             0x09 => { // ADD HL, BC
-                let hl = self.get_hl() as u32;
-                let bc = self.get_bc() as u32;
-                let result = hl + bc;
+                let op1 = self.get_hl();
+                let op2 = self.get_bc();
+                let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if (result & 0x10000) != 0 { F_C } else { 0 } | if ((hl ^ bc ^ result) & 0x1000) != 0 { F_H } else { 0 };
+                self.set_hl_flags_add(op1, op2, result, self.f);
                 11
             }
             0x0A => { // LD A, (BC)
@@ -326,9 +387,12 @@ impl Z80 {
             }
             0x0F => { // RRCA
                 let old_a = self.a;
+                let carry = (old_a & 0x01) != 0;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
-                // Flags: C = old bit 0. H=0, N=0. S, Z, PV, X, Y unaffected.
-                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x01) != 0 { F_C } else { 0 };
+                // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if carry { F_C } else { 0 }) |  // Set C flag
+                         (self.a & (F_Y | F_X));          // Set Y and X from new A
                 4
             }
             0x10 => { // DJNZ d
@@ -374,10 +438,13 @@ impl Z80 {
             }
             0x17 => { // RLA
                 let old_a = self.a;
-                let old_f_c = (self.f & F_C) != 0;
-                self.a = (old_a << 1) | (if old_f_c { 1 } else { 0 });
-                // Flags: C = old bit 7. H=0, N=0. S, Z, PV, X, Y unaffected.
-                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x80) != 0 { F_C } else { 0 };
+                let carry_out = (old_a & 0x80) != 0; // Carry is old bit 7
+                let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
+                self.a = (old_a << 1) | (if carry_in { 1 } else { 0 });
+                // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if carry_out { F_C } else { 0 }) |  // Set C flag
+                         (self.a & (F_Y | F_X));          // Set Y and X from new A
                 4
             }
             0x18 => { // JR d
@@ -390,7 +457,10 @@ impl Z80 {
                 let de = self.get_de() as u32;
                 let result = hl + de;
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if (result & 0x10000) != 0 { F_C } else { 0 } | if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 };
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
+                         (if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
+                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
                 self.f &= !F_N;
                 11
             }
@@ -422,10 +492,13 @@ impl Z80 {
             }
             0x1F => { // RRA
                 let old_a = self.a;
-                let old_f_c = (self.f & F_C) != 0;
-                self.a = (old_a >> 1) | (if old_f_c { 0x80 } else { 0 });
-                // Flags: C = old bit 0. H=0, N=0. S, Z, PV, X, Y unaffected.
-                self.f = (self.f & !(F_H | F_N | F_C)) | if (old_a & 0x01) != 0 { F_C } else { 0 };
+                let carry_out = (old_a & 0x01) != 0; // Carry is old bit 0
+                let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
+                self.a = (old_a >> 1) | (if carry_in { 0x80 } else { 0 });
+                // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if carry_out { F_C } else { 0 }) |  // Set C flag
+                         (self.a & (F_Y | F_X));          // Set Y and X from new A
                 4
             }
             0x20 => { // JR NZ, d
@@ -501,7 +574,11 @@ impl Z80 {
                 let hl = self.get_hl() as u32;
                 let result = hl + hl;
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if (result & 0x10000) != 0 { F_C } else { 0 } | if ((hl ^ hl ^ result) & 0x1000) != 0 { F_H } else { 0 };
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
+                         (if ((hl ^ hl ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
+                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
+                self.f &= !F_N;
                 11
             }
             0x2A => { // LD HL, (nn)
@@ -581,7 +658,9 @@ impl Z80 {
                 10
             }
             0x37 => { // SCF
-                self.f = (self.f & (F_S | F_Z | F_PV | F_X | F_Y)) | F_C;
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         F_C |                          // Set C flag
+                         (self.a & (F_Y | F_X));          // Set Y and X from A
                 4
             }
             0x38 => { // JR C, d
@@ -598,7 +677,11 @@ impl Z80 {
                 let sp = self.sp as u32;
                 let result = hl + sp;
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | if (result & 0x10000) != 0 { F_C } else { 0 } | if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 };
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
+                         (if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
+                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
+                self.f &= !F_N;
                 11
             }
             0x3A => { // LD A, (nn)
@@ -628,8 +711,11 @@ impl Z80 {
                 7
             }
             0x3F => { // CCF
-                let carry = (self.f & F_C) != 0;
-                self.f = (self.f & (F_S | F_Z | F_PV | F_X | F_Y)) | if !carry { F_C } else { 0 } | if carry { F_H } else { 0 };
+                let old_carry = (self.f & F_C) != 0;
+                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
+                         (if !old_carry { F_C } else { 0 }) | // Invert C flag
+                         (if old_carry { F_H } else { 0 }) | // H = old C flag
+                         (self.a & (F_Y | F_X));           // Set Y and X from A
                 4
             }
             0x40 => { // LD B, B
@@ -1170,7 +1256,10 @@ impl Z80 {
             }
             0xAF => { // XOR A
                 self.a = 0;
-                self.f = F_Z | F_PV | F_X | F_Y;  // Undocumented flags set for XOR A
+                // For XOR A, A becomes 0.
+                // Flags: S=0, Z=1, H=0, PV=1 (even parity), N=0, C=0.
+                // X (bit 3 of A) and Y (bit 5 of A) are 0.
+                self.f = F_Z | F_PV;
                 4
             }
             0xB0 => { // OR B
@@ -3686,58 +3775,6 @@ impl Z80 {
                 panic!("Unimplemented FDCB opcode: {:02X}", opcode);
             }
         }
-    }
-
-    pub fn reset(&mut self){
-        // Reset CPU state
-        self.a = 0; 
-        self.f = 0;
-        
-        self.b = 0; 
-        self.c = 0; 
-        
-        self.d = 0; 
-        self.e = 0;
-        
-        self.h = 0; 
-        self.l = 0;
-        
-        self.a_alt = 0; 
-        self.f_alt = 0;
-        
-        self.b_alt = 0; 
-        self.c_alt = 0;
-        
-        self.d_alt = 0; 
-        self.e_alt = 0;
-        
-        self.h_alt = 0; 
-        self.l_alt = 0;
-
-        self.sp = 0; 
-        self.pc = 0;
-        
-        self.ix = 0; 
-        self.iy = 0;
-        
-        self.i = 0; 
-        self.r = 0;
-        
-        self.iff1 = false; 
-        self.iff2 = false;
-        
-        self.im = InterruptMode::IM0;
-        self.int_requested = false;
-        self.halted = false;
-    }
-
-    pub fn raise_int(&mut self) {
-        if !self.iff1 {
-            return;
-        }
-        self.iff1 = false;
-        self.iff2 = false;
-        self.int_requested = true;
     }
 }
 
