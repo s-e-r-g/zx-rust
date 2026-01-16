@@ -339,6 +339,19 @@ impl Z80 {
         );
     }
 
+    fn set_flags_bit(&mut self, val: u8, bit: u8) {
+        let bit_is_set = (val & (1 << bit)) != 0;
+        let s = bit_is_set && bit == 7; // Set if n = 7 and tested bit is set.
+        let z = !bit_is_set;
+        let y = bit_is_set && bit == 5;
+        let h = true;
+        let x = bit_is_set && bit == 3;
+        let pv = !bit_is_set;
+        let n = false;
+        let c = (self.f & F_C) != 0; // Preserve carry
+        self.set_all_flags(s, z, y, h, x, pv, n, c);
+    }
+
 
 
 
@@ -2319,11 +2332,8 @@ impl Z80 {
                 let bit = (opcode >> 3) & 0x07;
                 let r = opcode & 0x07;
                 let val = if r == 6 { bus.read_byte(self.get_hl()) } else { self.get_reg(r) };
-                let bit_set = (val & (1 << bit)) != 0;
-                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
-                // F_X and F_Y are copied from corresponding bits of the operand being tested (val)
-                self.f |= val & (F_Y | F_X);
-                8
+                self.set_flags_bit(val, bit);
+                if r == 6 { 12 } else { 8 }
             }
             0x80..=0xBF => { // RES b, r
                 let b = (opcode >> 3) & 0x07;
@@ -3287,8 +3297,7 @@ impl Z80 {
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IX+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
-                let bit_set = (val & (1 << bit)) != 0;
-                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                self.set_flags_bit(val, bit);
                 20
             }
             0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IX+d)
@@ -3869,8 +3878,7 @@ impl Z80 {
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IY+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
-                let bit_set = (val & (1 << bit)) != 0;
-                self.f = (self.f & F_C) | F_H | (if !bit_set { F_Z | F_PV } else { 0 }) | (if bit == 7 && bit_set { F_S } else { 0 });
+                self.set_flags_bit(val, bit);
                 20
             }
             0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IY+d)
@@ -4195,8 +4203,8 @@ mod tests {
         machine.cpu.set_bc(0x1234);
         let cycles = machine.step();
         assert_eq!(machine.cpu.sp, 0xFFFC);
-        assert_eq!(machine.ram[0xFFFC], 0x12);
-        assert_eq!(machine.ram[0xFFFD], 0x34);
+        assert_eq!(machine.ram[0xFFFC], 0x34);
+        assert_eq!(machine.ram[0xFFFD], 0x12);
         assert_eq!(cycles, 11);
     }
 
@@ -4256,8 +4264,8 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x1234);
         assert_eq!(machine.cpu.sp, 0xFFFC);
-        assert_eq!(machine.ram[0xFFFC], 0x00);
-        assert_eq!(machine.ram[0xFFFD], 0x03);
+        assert_eq!(machine.ram[0xFFFD], 0x00);
+        assert_eq!(machine.ram[0xFFFC], 0x03);
         assert_eq!(cycles, 17);
     }
 
@@ -4743,8 +4751,8 @@ mod tests {
         machine.ram[0x2001] = 0xAB;
         let cycles = machine.step();
         assert_eq!(machine.cpu.iy, 0xABCD);
-        assert_eq!(machine.ram[0x2000], 0x12);
-        assert_eq!(machine.ram[0x2001], 0x34);
+        assert_eq!(machine.ram[0x2000], 0x34);
+        assert_eq!(machine.ram[0x2001], 0x12);
         assert_eq!(cycles, 23);
     }
 
@@ -4754,8 +4762,8 @@ mod tests {
         machine.cpu.iy = 0x1234;
         machine.cpu.sp = 0x2002;
         let cycles = machine.step();
-        assert_eq!(machine.ram[0x2000], 0x12);
-        assert_eq!(machine.ram[0x2001], 0x34);
+        assert_eq!(machine.ram[0x2000], 0x34);
+        assert_eq!(machine.ram[0x2001], 0x12);
         assert_eq!(machine.cpu.sp, 0x2000);
         assert_eq!(cycles, 15);
     }
@@ -5238,8 +5246,8 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x1234);
         assert_eq!(machine.cpu.sp, 0x1FE);
-        assert_eq!(machine.ram[0x1FF], 0x03); // Low byte of return address
-        assert_eq!(machine.ram[0x1FE], 0x01); // High byte of return address
+        assert_eq!(machine.ram[0x1FF], 0x01); // High byte of return address
+        assert_eq!(machine.ram[0x1FE], 0x03); // Low byte of return address
         assert_eq!(cycles, 17);
     }
 
@@ -5255,8 +5263,8 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x5678);
         assert_eq!(machine.cpu.sp, 0x2FE);
-        assert_eq!(machine.ram[0x2FF], 0x03); // Low byte of return address
-        assert_eq!(machine.ram[0x2FE], 0x02); // High byte of return address (0x200 + 3)
+        assert_eq!(machine.ram[0x2FF], 0x02); // High byte of return address (0x200 + 3)
+        assert_eq!(machine.ram[0x2FE], 0x03); // Low byte of return address
         assert_eq!(cycles, 17);
     }
 
@@ -5272,8 +5280,8 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x9ABC);
         assert_eq!(machine.cpu.sp, 0x24E);
-        assert_eq!(machine.ram[0x24F], 0x53); // Low byte of return address
-        assert_eq!(machine.ram[0x24E], 0x01); // High byte of return address (0x150 + 3)
+        assert_eq!(machine.ram[0x24F], 0x01); // High byte of return address (0x150 + 3)
+        assert_eq!(machine.ram[0x24E], 0x53); // Low byte of return address
         assert_eq!(cycles, 17);
     }
 
@@ -5289,8 +5297,8 @@ mod tests {
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0xCDEF);
         assert_eq!(machine.cpu.sp, 0x27E);
-        assert_eq!(machine.ram[0x27F], 0x83); // Low byte of return address
-        assert_eq!(machine.ram[0x27E], 0x01); // High byte of return address (0x180 + 3)
+        assert_eq!(machine.ram[0x27F], 0x01); // High byte of return address (0x180 + 3)
+        assert_eq!(machine.ram[0x27E], 0x83); // Low byte of return address
         assert_eq!(cycles, 17);
     }
 
@@ -5444,17 +5452,52 @@ mod tests {
     }
 
     #[test]
-    fn test_ed_4d_reti() {
-        let mut machine = TestMachine::new(Some(vec![0xED, 0x4D])); // RETI
-        machine.cpu.sp = 0xFFFC;
-        machine.ram[0xFFFC] = 0x78; // Low byte of return address
-        machine.ram[0xFFFD] = 0x56; // High byte of return address
-        machine.cpu.iff2 = true; // Set IFF2 to true
-        machine.cpu.iff1 = false; // Set IFF1 to false
-        let cycles = machine.step();
-        assert_eq!(machine.cpu.pc, 0x5678);
-        assert_eq!(machine.cpu.sp, 0xFFFE);
-        assert_eq!(machine.cpu.iff1, false); // IFF1 should be unaffected from IFF2
-        assert_eq!(cycles, 14);
+        fn test_ed_4d_reti() {
+            let mut machine = TestMachine::new(Some(vec![0xED, 0x4D])); // RETI
+            machine.cpu.sp = 0xFFFC;
+            machine.ram[0xFFFC] = 0x78; // Low byte of return address
+            machine.ram[0xFFFD] = 0x56; // High byte of return address
+            machine.cpu.iff2 = true; // Set IFF2 to true
+            machine.cpu.iff1 = false; // Set IFF1 to false
+            let cycles = machine.step();
+            assert_eq!(machine.cpu.pc, 0x5678);
+            assert_eq!(machine.cpu.sp, 0xFFFE);
+            assert_eq!(machine.cpu.iff1, false); // IFF1 should be unaffected from IFF2
+            assert_eq!(cycles, 14);
+        }
+    
+        #[test]
+        fn test_cb_bit_flags() {
+            // Test BIT 0, A
+            let mut machine = TestMachine::new(Some(vec![0xCB, 0x47])); // BIT 0, A
+            machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 0 is 0. Bit 3 is 1. Bit 5 is 1.
+            machine.cpu.f = F_C; // Start with carry set
+            
+            machine.step();
+            assert_eq!(machine.cpu.pc, 2);
+            assert_eq!((machine.cpu.f & F_S), 0, "S should be 0");
+            assert_ne!((machine.cpu.f & F_Z), 0, "Z should be 1");
+            assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+            assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
+            assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+            assert_ne!((machine.cpu.f & F_PV), 0, "PV should be 1");
+            assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
+            assert_ne!((machine.cpu.f & F_C), 0, "C should be preserved");
+    
+            // Test BIT 7, A
+            let mut machine = TestMachine::new(Some(vec![0xCB, 0x7F])); // BIT 7, A
+            machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 7 is 1. Bit 3 is 1. Bit 5 is 1.
+            machine.cpu.f = 0; // Start with carry reset
+            machine.step();
+            assert_eq!(machine.cpu.pc, 2);
+            assert_ne!((machine.cpu.f & F_S), 0, "S should be 1");
+            assert_eq!((machine.cpu.f & F_Z), 0, "Z should be 0");
+            assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+            assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
+            assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+            assert_eq!((machine.cpu.f & F_PV), 0, "PV should be 0");
+            assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
+            assert_eq!((machine.cpu.f & F_C), 0, "C should be preserved");
+        }
     }
-}
+    
