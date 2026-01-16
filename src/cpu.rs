@@ -65,6 +65,7 @@ pub struct Z80 {
 
     pub int_requested: bool,
     pub halted: bool,
+    pub ei_pending: bool,
 }
 
 impl Z80 {
@@ -87,6 +88,7 @@ impl Z80 {
             im: InterruptMode::IM0,
             int_requested: false,
             halted: false,
+            ei_pending: false,
         }
     }
 
@@ -285,6 +287,13 @@ impl Z80 {
                     return 19; // T-states for interrupt handling
                 }
             }
+        }
+
+        // EI delay: interrupts enabled AFTER next instruction
+        if self.ei_pending {
+            self.iff1 = true;
+            self.iff2 = true;
+            self.ei_pending = false;
         }
 
         // Fetch opcode
@@ -1719,8 +1728,7 @@ impl Z80 {
                 10
             }
             0xFB => { // EI
-                self.iff1 = true;
-                self.iff2 = true;
+                self.ei_pending = true;
                 4
             }
             0xFC => { // CALL M, nn
