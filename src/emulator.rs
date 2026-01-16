@@ -186,7 +186,10 @@ impl MachineZxSpectrum48 {
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
         };
-        machine.load_rom(); // Завантаж ROM
+        machine.load_rom();
+        // machine.load_test_image("test.tap").unwrap_or_else(|e| {
+        //     println!("Error loading test.tap: {}", e);
+        // }   );
         machine
     }
 
@@ -218,6 +221,94 @@ impl MachineZxSpectrum48 {
                 self.memory.rom[i] = b;
             }
         }
+    }
+
+    pub fn load_test_image(&mut self, filename: &str) -> Result<(), String> {
+        let tap_bytes = match std::fs::read(filename) {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(format!("Could not read file {}: {}", filename, e)),
+        };
+
+        let mut i = 0;
+        // First pass: look for a standard CODE block with a header
+        while i < tap_bytes.len() {
+            if i + 2 > tap_bytes.len() { break; }
+            let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+            i += 2;
+            
+            if i + block_len > tap_bytes.len() { break; }
+            let block = &tap_bytes[i..i + block_len];
+            i += block_len;
+
+            if block_len > 18 && block[0] == 0x00 && block[1] == 3 { // Header, Type 3: Code
+                let data_len_in_header = u16::from_le_bytes([block[12], block[13]]);
+                let start_address = u16::from_le_bytes([block[14], block[15]]);
+                
+                if i >= tap_bytes.len() { continue; }
+
+                if i + 2 > tap_bytes.len() { break; }
+                let data_block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+                
+                if i + 2 + data_block_len > tap_bytes.len() { break; }
+                let data_block = &tap_bytes[i + 2 .. i + 2 + data_block_len];
+
+                if !data_block.is_empty() && data_block[0] == 0xFF {
+                    let code_data = &data_block[1..data_block.len() - 1];
+                    if code_data.len() != data_len_in_header as usize {
+                        println!("Warning: TAP block header length ({}) differs from actual data length ({}).", data_len_in_header, code_data.len());
+                    }
+                    
+                    println!("Loading {} bytes to 0x{:04X}", code_data.len(), start_address);
+                    for (offset, byte) in code_data.iter().enumerate() {
+                        self.write_byte(start_address + offset as u16, *byte);
+                    }
+                    
+                    let di_halt = [0xF3, 0x76];
+                    self.write_byte(0x5B00, di_halt[0]);
+                    self.write_byte(0x5B01, di_halt[1]);
+                    self.cpu.pc = 0x5B00;
+                    self.cpu.iff1 = false;
+                    self.cpu.iff2 = false;
+                    self.cpu.halted = false;
+
+                    return Ok(());
+                }
+            }
+        }
+        
+        // Second pass: if no code block was found, look for a raw screen dump
+        i = 0;
+        while i < tap_bytes.len() {
+            if i + 2 > tap_bytes.len() { break; }
+            let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
+            i += 2;
+            
+            if i + block_len > tap_bytes.len() { break; }
+            let block = &tap_bytes[i..i + block_len];
+            i += block_len;
+
+            if block_len > 2 && block[0] == 0xFF { // Data block
+                let data = &block[1..block.len()-1];
+                if data.len() == 6912 {
+                    println!("Detected screen data (6912 bytes). Loading to 0x4000.");
+                    for (offset, byte) in data.iter().enumerate() {
+                        self.write_byte(0x4000 + offset as u16, *byte);
+                    }
+
+                    let di_halt = [0xF3, 0x76];
+                    self.write_byte(0x5B00, di_halt[0]);
+                    self.write_byte(0x5B01, di_halt[1]);
+                    self.cpu.pc = 0x5B00;
+                    self.cpu.iff1 = false;
+                    self.cpu.iff2 = false;
+                    self.cpu.halted = false;
+
+                    return Ok(());
+                }
+            }
+        }
+
+        Err("No CODE or 6912-byte data block found in tap file.".to_string())
     }
 
     pub fn run_until_frame(&mut self) {
