@@ -2502,9 +2502,37 @@ impl Z80 {
                 bus.write_port(self.get_bc(), self.l);
                 12
             }
-            0x71 => { // OUT (C), 0
+            0x70 => { // IN 0, (C) (undocumented)
+                let port = self.get_bc();
+                let _ = bus.read_port(port);
+                // Discarded
+                12
+            }
+            0x71 => { // OUT (C), 0 (undocumented)
                 bus.write_port(self.get_bc(), 0);
                 12
+            }
+            0x72 => { // SBC HL, SP
+                let hl = self.get_hl() as u32;
+                let sp = self.sp as u32;
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let result = hl.wrapping_sub(sp).wrapping_sub(carry);
+                self.set_hl(result as u16);
+                let result_u16 = result as u16;
+                let overflow = ((hl ^ sp) & (hl ^ result)) & 0x8000 != 0;
+                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
+                         (if result_u16 == 0 { F_Z } else { 0 }) |
+                         (if overflow { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFFFF { F_C } else { 0 }) |
+                         (if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                15
+            }
+            0x73 => { // LD (nn), SP
+                let nn = self.read_word_pc(bus);
+                bus.write_byte(nn, (self.sp & 0x00FF) as u8);
+                bus.write_byte(nn.wrapping_add(1), (self.sp >> 8) as u8);
+                20
             }
             0x78 => { // IN A, (C)
                 let port = self.get_bc();
