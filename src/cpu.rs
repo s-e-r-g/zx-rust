@@ -101,9 +101,9 @@ impl Z80 {
 
     fn push(&mut self, mem: &mut dyn Memory, value: u16) {
         self.sp = self.sp.wrapping_sub(1);
-        mem.write_byte(self.sp, (value & 0xFF) as u8);
-        self.sp = self.sp.wrapping_sub(1);
         mem.write_byte(self.sp, (value >> 8) as u8);
+        self.sp = self.sp.wrapping_sub(1);
+        mem.write_byte(self.sp, (value & 0xFF) as u8);
     }
 
     fn pop(&mut self, mem: &dyn Memory) -> u16 {
@@ -1746,6 +1746,9 @@ impl Z80 {
                 self.push(bus, self.pc);
                 self.pc = 0x38;
                 11
+            }
+            _ => {
+                panic!("Unimplemented opcode: 0x{:02X}", opcode);
             }
         }
     }
