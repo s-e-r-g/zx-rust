@@ -172,89 +172,145 @@ impl Z80 {
         v.count_ones() % 2 == 0
     }
 
+    fn set_flag_s(&mut self, val: bool) {
+        if val {
+            self.f |= F_S;
+        } else {
+            self.f &= !F_S;
+        }
+    }
+
+    fn set_flag_z(&mut self, val: bool) {
+        if val {
+            self.f |= F_Z;
+        } else {
+            self.f &= !F_Z;
+        }
+    }
+
+    fn set_flag_y(&mut self, val: bool) {
+        if val {
+            self.f |= F_Y;
+        } else {
+            self.f &= !F_Y;
+        }
+    }
+
+    fn set_flag_h(&mut self, val: bool) {
+        if val {
+            self.f |= F_H;
+        } else {
+            self.f &= !F_H;
+        }
+    }
+
+    fn set_flag_x(&mut self, val: bool) {
+        if val {
+            self.f |= F_X;
+        } else {
+            self.f &= !F_X;
+        }
+    }
+
+    fn set_flags_xy_from_result(&mut self, result: u8) {
+        // xy copies values from bits 3 and 5 of the result
+        self.f = (self.f & !(F_Y | F_X)) | (result & (F_Y | F_X));
+    }
+
+    fn set_flag_pv(&mut self, val: bool) {
+        if val {
+            self.f |= F_PV;
+        } else {
+            self.f &= !F_PV;
+        }
+    }
+
+    fn set_flag_n(&mut self, val: bool) {
+        if val {
+            self.f |= F_N;
+        } else {
+            self.f &= !F_N;
+        }
+    }
+
+    fn set_flag_c(&mut self, val: bool) {
+        if val {
+            self.f |= F_C;
+        } else {
+            self.f &= !F_C;
+        }
+    }
+
+    fn set_all_flags(&mut self, s: bool, z: bool, y: bool, h: bool, x: bool, pv: bool, n: bool, c: bool) {
+        self.f = (if s { F_S } else { 0 }) |
+                 (if z { F_Z } else { 0 }) |
+                 (if y { F_Y } else { 0 }) |
+                 (if h { F_H } else { 0 }) |
+                 (if x { F_X } else { 0 }) |
+                 (if pv { F_PV } else { 0 }) |
+                 (if n { F_N } else { 0 }) |
+                 (if c { F_C } else { 0 });
+    }
+
     fn set_flags_add(&mut self, a: u8, b: u8, result: u16) {
         let res = result as u8;
-        self.f = 0;
-        if res == 0 { self.f |= F_Z; }
-        if (res & 0x80) != 0 { self.f |= F_S; }
-        if (res & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
-        if (result & 0x100) != 0 { self.f |= F_C; }
-        if (res & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
-        if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
+        let s = (res & 0x80) != 0;
+        let z = res == 0;
+        let y = (res & 0x20) != 0;
+        let h = ((a ^ b ^ res) & 0x10) != 0;
+        let x = (res & 0x08) != 0;
         let overflow = ((a ^ res) & (b ^ res) & 0x80) != 0;
-        if overflow { self.f |= F_PV; }
+        let n = false;
+        let c = (result & 0x100) != 0;
+        self.set_all_flags(s, z, y, h, x, overflow, n, c);
     }
 
     fn set_flags_sub(&mut self, a: u8, b: u8, result: i16) {
         let res = result as u8;
-        self.f = F_N;
-        if res == 0 { self.f |= F_Z; }
-        if (res & 0x80) != 0 { self.f |= F_S; }
-        if (res & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
-        if result < 0 { self.f |= F_C; }
-        if (res & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
-        if ((a ^ b ^ res) & 0x10) != 0 { self.f |= F_H; }
+        let s = (res & 0x80) != 0;
+        let z = res == 0;
+        let y = (res & 0x20) != 0;
+        let h = ((a ^ b ^ res) & 0x10) != 0;
+        let x = (res & 0x08) != 0;
         let overflow = ((a ^ res) & ((!b) ^ res) & 0x80) != 0;
-        if overflow { self.f |= F_PV; }
+        let n = true;
+        let c = result < 0;
+        self.set_all_flags(s, z, y, h, x, overflow, n, c);
     }
 
     fn set_flags_rot_shift(&mut self, result: u8, carry: bool) {
-        self.f = 0;
-        if result == 0 { self.f |= F_Z; }
-        if (result & 0x80) != 0 { self.f |= F_S; }
-        if (result & 0x20) != 0 { self.f |= F_Y; }  // Undocumented flag
-        if carry { self.f |= F_C; }
-        if (result & 0x08) != 0 { self.f |= F_X; }  // Undocumented flag
-        // H and N are reset (already 0)
-        if Z80::parity(result) { self.f |= F_PV; }
+        let s = (result & 0x80) != 0;
+        let z = result == 0;
+        let y = (result & 0x20) != 0;
+        let h = false;
+        let x = (result & 0x08) != 0;
+        let pv = Z80::parity(result);
+        let n = false;
+        let c = carry;
+        self.set_all_flags(s, z, y, h, x, pv, n, c);
     }
 
     // Helper for 16-bit ADD operations (e.g., ADD HL, BC)
-    fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32, original_f: u8) {
-        let mut new_f = original_f & (F_S | F_Z | F_PV); // Preserve S, Z, PV
-
-        new_f &= !F_N; // N flag is always reset for ADD
-
-        // C flag is set if result > 0xFFFF
-        if (result & 0x10000) != 0 {
-            new_f |= F_C;
-        }
-
-        // H flag (half carry from bit 11)
-        if ((op1 ^ op2 ^ result as u16) & 0x1000) != 0 {
-            new_f |= F_H;
-        }
-
-        // Undocumented F_X and F_Y flags (bits 3 and 5 of high byte of result)
-        new_f |= (((result as u16 >> 8) as u8) & (F_Y | F_X));
-        self.f = new_f;
+    fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32) {
+        self.set_flag_n(false); // N flag is always reset for ADD
+        self.set_flag_c((result & 0x10000) != 0);
+        self.set_flag_h(((op1 ^ op2 ^ result as u16) & 0x1000) != 0);
+        self.set_flags_xy_from_result((result >> 8) as u8);
     }
 
     // Helper for 16-bit SBC operations (e.g., SBC HL, BC)
     fn set_hl_flags_sub(&mut self, op1: u16, op2: u16, result: i32) {
         let result_u16 = result as u16;
-
-        self.f = F_N; // N flag is always set for SUB/SBC
-
-        if result_u16 == 0 { self.f |= F_Z; }
-        if (result_u16 & 0x8000) != 0 { self.f |= F_S; } // Sign flag from bit 15
-
-        // C flag (borrow)
-        if result < 0 { self.f |= F_C; }
-
-        // H flag (half borrow from bit 11)
-        // (op1 ^ op2 ^ result_u16) & 0x1000 checks for borrow from bit 11
-        if ((op1 ^ op2 ^ result_u16) & 0x1000) != 0 {
-            self.f |= F_H;
-        }
-
-        // P/V flag (overflow) - ((op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000) != 0
-        // (op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000 checks for overflow at bit 15
-        let overflow = ((op1 ^ result_u16) & (op2 ^ result_u16) & 0x8000) != 0;
-        if overflow { self.f |= F_PV; }
-
-        // Undocumented F_X and F_Y flags (bits 3 and 5 of high byte of result)
-        self.f = (self.f & !(F_Y | F_X)) | (((result_u16 >> 8) as u8) & (F_Y | F_X));
+        let s = (result_u16 & 0x8000) != 0;
+        let z = result_u16 == 0;
+        let result_hi = (result_u16 >> 8) as u8;
+        let y = (result_hi & F_Y) != 0;
+        let h = ((op1 ^ op2 ^ result_u16) & 0x1000) != 0;
+        let x = (result_hi & F_X) != 0;
+        let overflow = ((op1 ^ result_u16) & ((!op2).wrapping_add(1) ^ result_u16) & 0x8000) != 0;
+        let n = true;
+        let c = result < 0;
+        self.set_all_flags(s, z, y, h, x, overflow, n, c);
     }
 
 
@@ -323,7 +379,6 @@ impl Z80 {
             0x04 => { // INC B
                 let res = self.b.wrapping_add(1);
                 self.set_flags_add(self.b, 1, res as u16);
-                self.f &= !F_N;
                 self.b = res;
                 4
             }
@@ -342,9 +397,10 @@ impl Z80 {
                 let carry = (old_a & 0x80) != 0;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
                 // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if carry { F_C } else { 0 }) |  // Set C flag
-                         (self.a & (F_Y | F_X));          // Set Y and X from new A
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_c(carry);
+                self.set_flags_xy_from_result(self.a);
                 4
             }
             0x08 => { // EX AF, AF'
@@ -361,7 +417,7 @@ impl Z80 {
                 let op2 = self.get_bc();
                 let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
-                self.set_hl_flags_add(op1, op2, result, self.f);
+                self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x0A => { // LD A, (BC)
@@ -376,7 +432,6 @@ impl Z80 {
             0x0C => { // INC C
                 let res = self.c.wrapping_add(1);
                 self.set_flags_add(self.c, 1, res as u16);
-                self.f &= !F_N;
                 self.c = res;
                 4
             }
@@ -395,9 +450,10 @@ impl Z80 {
                 let carry = (old_a & 0x01) != 0;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
                 // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if carry { F_C } else { 0 }) |  // Set C flag
-                         (self.a & (F_Y | F_X));          // Set Y and X from new A
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_c(carry);
+                self.set_flags_xy_from_result(self.a);
                 4
             }
             0x10 => { // DJNZ d
@@ -427,7 +483,6 @@ impl Z80 {
             0x14 => { // INC D
                 let res = self.d.wrapping_add(1);
                 self.set_flags_add(self.d, 1, res as u16);
-                self.f &= !F_N;
                 self.d = res;
                 4
             }
@@ -447,9 +502,10 @@ impl Z80 {
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
                 self.a = (old_a << 1) | (if carry_in { 1 } else { 0 });
                 // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if carry_out { F_C } else { 0 }) |  // Set C flag
-                         (self.a & (F_Y | F_X));          // Set Y and X from new A
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_c(carry_out);
+                self.set_flags_xy_from_result(self.a);
                 4
             }
             0x18 => { // JR d
@@ -458,15 +514,11 @@ impl Z80 {
                 12
             }
             0x19 => { // ADD HL, DE
-                let hl = self.get_hl() as u32;
-                let de = self.get_de() as u32;
-                let result = hl + de;
+                let op1 = self.get_hl();
+                let op2 = self.get_de();
+                let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
-                         (if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
-                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
-                self.f &= !F_N;
+                self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x1A => { // LD A, (DE)
@@ -481,7 +533,6 @@ impl Z80 {
             0x1C => { // INC E
                 let res = self.e.wrapping_add(1);
                 self.set_flags_add(self.e, 1, res as u16);
-                self.f &= !F_N;
                 self.e = res;
                 4
             }
@@ -501,9 +552,10 @@ impl Z80 {
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
                 self.a = (old_a >> 1) | (if carry_in { 0x80 } else { 0 });
                 // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if carry_out { F_C } else { 0 }) |  // Set C flag
-                         (self.a & (F_Y | F_X));          // Set Y and X from new A
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_c(carry_out);
+                self.set_flags_xy_from_result(self.a);
                 4
             }
             0x20 => { // JR NZ, d
@@ -533,7 +585,6 @@ impl Z80 {
             0x24 => { // INC H
                 let res = self.h.wrapping_add(1);
                 self.set_flags_add(self.h, 1, res as u16);
-                self.f &= !F_N;
                 self.h = res;
                 4
             }
@@ -576,14 +627,11 @@ impl Z80 {
                 }
             }
             0x29 => { // ADD HL, HL
-                let hl = self.get_hl() as u32;
-                let result = hl + hl;
+                let op1 = self.get_hl();
+                let op2 = op1;
+                let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
-                         (if ((hl ^ hl ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
-                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
-                self.f &= !F_N;
+                self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x2A => { // LD HL, (nn)
@@ -599,7 +647,6 @@ impl Z80 {
             0x2C => { // INC L
                 let res = self.l.wrapping_add(1);
                 self.set_flags_add(self.l, 1, res as u16);
-                self.f &= !F_N;
                 self.l = res;
                 4
             }
@@ -646,7 +693,6 @@ impl Z80 {
                 let res = val.wrapping_add(1);
                 bus.write_byte(addr, res);
                 self.set_flags_add(val, 1, res as u16);
-                self.f &= !F_N;
                 11
             }
             0x35 => { // DEC (HL)
@@ -678,15 +724,11 @@ impl Z80 {
                 }
             }
             0x39 => { // ADD HL, SP
-                let hl = self.get_hl() as u32;
-                let sp = self.sp as u32;
-                let result = hl + sp;
+                let op1 = self.get_hl();
+                let op2 = self.sp;
+                let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
-                self.f = (self.f & (F_S | F_Z | F_PV)) | // Preserve S, Z, PV
-                         (if (result & 0x10000) != 0 { F_C } else { 0 }) | // Set C
-                         (if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 }) | // Set H
-                         (((result as u16 >> 8) as u8) & (F_Y | F_X)); // Set Y and X from high byte of result
-                self.f &= !F_N;
+                self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x3A => { // LD A, (nn)
@@ -701,7 +743,7 @@ impl Z80 {
             0x3C => { // INC A
                 let res = self.a.wrapping_add(1);
                 self.set_flags_add(self.a, 1, res as u16);
-                self.f &= !F_N;
+                self.set_flag_n(false);
                 self.a = res;
                 4
             }
@@ -2444,10 +2486,12 @@ impl Z80 {
             }
             0x57 => { // LD A, I
                 self.a = self.i;
-                self.f = (self.f & F_C) |
-                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
-                         (if self.a == 0 { F_Z } else { 0 }) |
-                         (if Self::parity(self.a) { F_PV } else { 0 });
+                self.set_flag_z(self.a == 0);
+                self.set_flag_s(self.a & 0x80 != 0);
+                self.set_flag_pv(self.iff2);
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_c(false);
                 9
             }
             0x58 => { // IN E, (C)
