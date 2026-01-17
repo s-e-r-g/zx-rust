@@ -204,14 +204,6 @@ impl Z80 {
         }
     }
 
-    fn set_flag_x(&mut self, val: bool) {
-        if val {
-            self.f |= F_X;
-        } else {
-            self.f &= !F_X;
-        }
-    }
-
     fn set_flags_xy_from_result(&mut self, result: u8) {
         // xy copies values from bits 3 and 5 of the result
         self.f = (self.f & !(F_Y | F_X)) | (result & (F_Y | F_X));
@@ -351,9 +343,6 @@ impl Z80 {
         let c = (self.f & F_C) != 0; // Preserve carry
         self.set_all_flags(s, z, y, h, x, pv, n, c);
     }
-
-
-
 
     pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
         if self.halted {
@@ -2533,12 +2522,11 @@ impl Z80 {
             }
             0x57 => { // LD A, I
                 self.a = self.i;
-                self.set_flag_z(self.a == 0);
                 self.set_flag_s(self.a & 0x80 != 0);
+                self.set_flag_z(self.a == 0);
                 self.set_flag_pv(self.iff2);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
-                self.set_flag_c(false);
                 9
             }
             0x58 => { // IN E, (C)
@@ -3954,7 +3942,6 @@ mod tests {
             let bus = unsafe { &mut *bus_ptr };
             self.cpu.step(bus)
         }
-
     }
 
     #[test]

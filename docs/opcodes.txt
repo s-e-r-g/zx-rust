@@ -8,7 +8,7 @@ Any instruction marked with * is undocumented.
 05 DEC B
 06 n LD B,n
 07 RLCA
-08 EX AF,AF’
+08 EX AF,AFï¿½
 09 ADD HL,BC
 0A LD A,(BC)
 0B DEC BC
