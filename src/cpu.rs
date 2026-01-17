@@ -2581,8 +2581,47 @@ impl Z80 {
                 self.im = InterruptMode::IM2;
                 8
             }
+            0x5F => { // LD A, R
+                self.a = self.r;
+                self.set_flag_s(self.a & 0x80 != 0);
+                self.set_flag_z(self.a == 0);
+                self.set_flag_pv(self.iff2);
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                9
+            }
+            0x60 => { // IN H, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.h = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                12
+            }
             0x61 => { // OUT (C), H
                 bus.write_port(self.get_bc(), self.h);
+                12
+            }
+            0x62 => { // SBC HL, HL
+                let hl = self.get_hl() as u32;
+                let hl2 = self.get_hl() as u32;
+                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let result = hl.wrapping_sub(hl2).wrapping_sub(carry);
+                self.set_hl(result as u16);
+                let result_u16 = result as u16;
+                let overflow = ((hl ^ hl2) & (hl ^ result)) & 0x8000 != 0;
+                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
+                         (if result_u16 == 0 { F_Z } else { 0 }) |
+                         (if overflow { F_PV } else { 0 }) |
+                         F_N |
+                         (if result > 0xFFFF { F_C } else { 0 }) |
+                         (if ((hl ^ hl2 ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                15
+            }
+            0x68 => { // IN L, (C)
+                let port = self.get_bc();
+                let val = bus.read_port(port);
+                self.l = val;
+                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
             0x69 => { // OUT (C), L
