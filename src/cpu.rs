@@ -822,7 +822,6 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            // <========================TODO: check flags for all instructions========================>  
             0x38 => { // JR C, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_C) != 0 {
@@ -845,28 +844,33 @@ impl Z80 {
             0x3A => { // LD A, (nn)
                 let nn = self.read_word_pc(bus);
                 self.a = bus.read_byte(nn);
+                // flags unchanged
                 13
             }
             0x3B => { // DEC SP
                 self.sp = self.sp.wrapping_sub(1);
+                // flags unchanged
                 6
             }
             0x3C => { // INC A
                 self.a = self.a.wrapping_add(1);
+                // flags
                 self.set_flags_inc_r8(self.a);
                 4
             }
             0x3D => { // DEC A
-                let res = self.a.wrapping_sub(1);
-                self.set_flags_sub(self.a, 1, res as i16);
-                self.a = res;
+                self.a = self.a.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.a);
                 4
             }
             0x3E => { // LD A, n
                 self.a = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x3F => { // CCF
+                // flags only. s, z, pv unchanged. H = old C, N = 0, C = !old C. X,Y from new A.
                 let old_carry = (self.f & F_C) != 0;
                 self.set_flag_c(!old_carry);
                 self.set_flag_h(old_carry);
@@ -875,217 +879,273 @@ impl Z80 {
                 4
             }
             0x40 => { // LD B, B
+                // flags unchanged
                 4
             }
             0x41 => { // LD B, C
                 self.b = self.c;
+                // flags unchanged
                 4
             }
             0x42 => { // LD B, D
                 self.b = self.d;
+                // flags unchanged
                 4
             }
             0x43 => { // LD B, E
                 self.b = self.e;
+                // flags unchanged
                 4
             }
             0x44 => { // LD B, H
+                // flags unchanged
                 self.b = self.h;
                 4
             }
             0x45 => { // LD B, L
+                // flags unchanged
                 self.b = self.l;
                 4
             }
             0x46 => { // LD B, (HL)
                 self.b = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x47 => { // LD B, A
                 self.b = self.a;
+                // flags unchanged
                 4
             }
             0x48 => { // LD C, B
                 self.c = self.b;
+                // flags unchanged
                 4
             }
             0x49 => { // LD C, C
+                // flags unchanged
                 4
             }
             0x4A => { // LD C, D
+                // flags unchanged
                 self.c = self.d;
                 4
             }
             0x4B => { // LD C, E
+                // flags unchanged
                 self.c = self.e;
                 4
             }
             0x4C => { // LD C, H
+                // flags unchanged
                 self.c = self.h;
                 4
             }
             0x4D => { // LD C, L
+                // flags unchanged
                 self.c = self.l;
                 4
             }
             0x4E => { // LD C, (HL)
                 self.c = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x4F => { // LD C, A
                 self.c = self.a;
+                // flags unchanged
                 4
             }
             0x50 => { // LD D, B
                 self.d = self.b;
+                // flags unchanged
                 4
             }
             0x51 => { // LD D, C
                 self.d = self.c;
+                // flags unchanged
                 4
             }
             0x52 => { // LD D, D
+                // flags unchanged
                 4
             }
             0x53 => { // LD D, E
                 self.d = self.e;
+                // flags unchanged
                 4
             }
             0x54 => { // LD D, H
                 self.d = self.h;
+                // flags unchanged
                 4
             }
             0x55 => { // LD D, L
                 self.d = self.l;
+                // flags unchanged
                 4
             }
             0x56 => { // LD D, (HL)
                 self.d = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x57 => { // LD D, A
                 self.d = self.a;
+                // flags unchanged
                 4
             }
             0x58 => { // LD E, B
                 self.e = self.b;
+                // flags unchanged
                 4
             }
             0x59 => { // LD E, C
                 self.e = self.c;
+                // flags unchanged
                 4
             }
             0x5A => { // LD E, D
                 self.e = self.d;
+                // flags unchanged
                 4
             }
             0x5B => { // LD E, E
+                // flags unchanged
                 4
             }
             0x5C => { // LD E, H
                 self.e = self.h;
+                // flags unchanged
                 4
             }
             0x5D => { // LD E, L
                 self.e = self.l;
+                // flags unchanged
                 4
             }
             0x5E => { // LD E, (HL)
                 self.e = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x5F => { // LD E, A
                 self.e = self.a;
+                // flags unchanged
                 4
             }
             0x60 => { // LD H, B
                 self.h = self.b;
+                // flags unchanged
                 4
             }
             0x61 => { // LD H, C
                 self.h = self.c;
+                // flags unchanged
                 4
             }
             0x62 => { // LD H, D
                 self.h = self.d;
+                // flags unchanged
                 4
             }
             0x63 => { // LD H, E
                 self.h = self.e;
+                // flags unchanged
                 4
             }
             0x64 => { // LD H, H
+                //
                 4
             }
             0x65 => { // LD H, L
                 self.h = self.l;
+                // flags unchanged
                 4
             }
             0x66 => { // LD H, (HL)
                 self.h = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x67 => { // LD H, A
                 self.h = self.a;
+                // flags unchanged
                 4
             }
             0x68 => { // LD L, B
                 self.l = self.b;
+                // flags unchanged
                 4
             }
             0x69 => { // LD L, C
                 self.l = self.c;
+                // flags unchanged
                 4
             }
             0x6A => { // LD L, D
                 self.l = self.d;
+                // flags unchanged
                 4
             }
             0x6B => { // LD L, E
                 self.l = self.e;
+                // flags unchanged
                 4
             }
             0x6C => { // LD L, H
                 self.l = self.h;
+                // flags unchanged
                 4
             }
             0x6D => { // LD L, L
+                // flags unchanged
                 4
             }
             0x6E => { // LD L, (HL)
                 self.l = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x6F => { // LD L, A
                 self.l = self.a;
+                // flags unchanged
                 4
             }
             0x70 => { // LD (HL), B
                 bus.write_byte(self.get_hl(), self.b);
+                // flags unchanged
                 7
             }
             0x71 => { // LD (HL), C
                 bus.write_byte(self.get_hl(), self.c);
+                // flags unchanged
                 7
             }
             0x72 => { // LD (HL), D
                 bus.write_byte(self.get_hl(), self.d);
+                // flags unchanged
                 7
             }
             0x73 => { // LD (HL), E
                 bus.write_byte(self.get_hl(), self.e);
+                // flags unchanged
                 7
             }
             0x74 => { // LD (HL), H
                 bus.write_byte(self.get_hl(), self.h);
+                // flags unchanged
                 7
             }
             0x75 => { // LD (HL), L
                 bus.write_byte(self.get_hl(), self.l);
+                // flags unchanged
                 7
             }
+            // <========================TODO: check flags for all instructions========================>
             0x76 => { // HALT
                 self.halted = true;
+                // flags unchanged
                 4
             }
             0x77 => { // LD (HL), A
