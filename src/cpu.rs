@@ -681,7 +681,7 @@ impl Z80 {
                 // flags unchanged
                 7
             }
-            // <========================TODO: check flags for all instructions========================>            
+            // TODO: add test for DAA
             0x27 => { // DAA
                 let mut correction = 0;
                 let n_flag = (self.f & F_N) != 0; // preserve N
@@ -716,12 +716,14 @@ impl Z80 {
                 } else {
                     7
                 }
+                // flags unchanged
             }
             0x29 => { // ADD HL, HL
                 let op1 = self.get_hl();
                 let op2 = op1;
                 let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
+                // flags
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
@@ -729,33 +731,37 @@ impl Z80 {
                 let nn = self.read_word_pc(bus);
                 self.l = bus.read_byte(nn);
                 self.h = bus.read_byte(nn.wrapping_add(1));
+                // flags unchanged
                 16
             }
             0x2B => { // DEC HL
                 self.set_hl(self.get_hl().wrapping_sub(1));
+                // flags unchanged
                 6
             }
             0x2C => { // INC L
                 self.l = self.l.wrapping_add(1);
+                // flags
                 self.set_flags_inc_r8(self.l);
                 4
             }
             0x2D => { // DEC L
                 self.l = self.l.wrapping_sub(1);
+                // flags
                 self.set_flags_dec_r8(self.l);
                 4
             }
             0x2E => { // LD L, n
                 self.l = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x2F => { // CPL
                 self.a = !self.a;
-                let c_flag = (self.f & F_C) != 0;
-                self.set_flags_or_xor(self.a); // Sets S,Z,Y,X,PV, clears H,N,C
+                // flags
                 self.set_flag_h(true);
                 self.set_flag_n(true);
-                self.set_flag_c(c_flag);
+                self.set_flags_xy_from_result(self.a);
                 4
             }
             0x30 => { // JR NC, d
@@ -766,18 +772,22 @@ impl Z80 {
                 } else {
                     7
                 }
+                // flags unchanged
             }
             0x31 => { // LD SP, nn
                 self.sp = self.read_word_pc(bus);
+                // flags unchanged
                 10
             }
             0x32 => { // LD (nn), A
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.a);
+                // flags unchanged
                 13
             }
             0x33 => { // INC SP
                 self.sp = self.sp.wrapping_add(1);
+                // flags unchanged
                 6
             }
             0x34 => { // INC (HL)
@@ -785,6 +795,7 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_add(1);
                 bus.write_byte(addr, res);
+                // flags
                 self.set_flags_inc_r8(res);
                 11
             }
@@ -793,21 +804,25 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_sub(1);
                 bus.write_byte(addr, res);
+                // flags
                 self.set_flags_dec_r8(res);
                 11
             }
             0x36 => { // LD (HL), n
                 let n = self.read_byte_pc(bus);
                 bus.write_byte(self.get_hl(), n);
+                // flags unchanged
                 10
             }
             0x37 => { // SCF
+                // flags only
                 self.set_flag_c(true);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flags_xy_from_result(self.a);
                 4
             }
+            // <========================TODO: check flags for all instructions========================>  
             0x38 => { // JR C, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_C) != 0 {
@@ -816,12 +831,14 @@ impl Z80 {
                 } else {
                     7
                 }
+                // flags unchanged
             }
             0x39 => { // ADD HL, SP
                 let op1 = self.get_hl();
                 let op2 = self.sp;
                 let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
+                // flags
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
