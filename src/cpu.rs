@@ -1142,7 +1142,6 @@ impl Z80 {
                 // flags unchanged
                 7
             }
-            // <========================TODO: check flags for all instructions========================>
             0x76 => { // HALT
                 self.halted = true;
                 // flags unchanged
@@ -1150,39 +1149,49 @@ impl Z80 {
             }
             0x77 => { // LD (HL), A
                 bus.write_byte(self.get_hl(), self.a);
+                // flags unchanged
                 7
             }
             0x78 => { // LD A, B
                 self.a = self.b;
+                // flags unchanged
                 4
             }
             0x79 => { // LD A, C
                 self.a = self.c;
+                // flags unchanged
                 4
             }
             0x7A => { // LD A, D
                 self.a = self.d;
+                // flags unchanged
                 4
             }
             0x7B => { // LD A, E
                 self.a = self.e;
+                // flags unchanged
                 4
             }
             0x7C => { // LD A, H
                 self.a = self.h;
+                // flags unchanged
                 4
             }
             0x7D => { // LD A, L
                 self.a = self.l;
+                // flags unchanged
                 4
             }
             0x7E => { // LD A, (HL)
                 self.a = bus.read_byte(self.get_hl());
+                // flags unchanged
                 7
             }
             0x7F => { // LD A, A
+                // flags unchanged
                 4
             }
+            // <========================TODO: check flags for all instructions========================>
             0x80 => { // ADD A, B
                 let result = self.a as u16 + self.b as u16;
                 self.set_flags_add(self.a, self.b, result);
