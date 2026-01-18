@@ -196,6 +196,14 @@ impl Z80 {
         }
     }
 
+    fn set_flag_x(&mut self, val: bool) {
+        if val {
+            self.f |= F_X;
+        } else {
+            self.f &= !F_X;
+        }
+    }
+
     fn set_flag_h(&mut self, val: bool) {
         if val {
             self.f |= F_H;
@@ -257,6 +265,28 @@ impl Z80 {
         self.set_all_flags(s, z, y, h, x, overflow, n, c);
     }
 
+    fn set_flags_inc_r8(&mut self, r: u8) {
+        self.set_flag_s((r & 0x80) != 0);
+        self.set_flag_z(r == 0);
+        self.set_flag_y((r & F_Y) != 0);
+        self.set_flag_h((r & 0x0F) == 0);
+        self.set_flag_x((r & F_X) != 0);
+        self.set_flag_pv(r == 0x80);
+        self.set_flag_n(false);
+        // c unchanged
+    }
+
+    fn set_flags_dec_r8(&mut self, r: u8) {
+        self.set_flag_s((r & 0x80) != 0);
+        self.set_flag_z(r == 0);
+        self.set_flag_y((r & F_Y) != 0);
+        self.set_flag_h((r & 0x0F) == 0);
+        self.set_flag_x((r & F_X) != 0);
+        self.set_flag_pv(r == 0x7F);
+        self.set_flag_n(true);
+        // c unchanged
+    }
+
     fn set_flags_sub(&mut self, a: u8, b: u8, result: i16) {
         let res = result as u8;
         let s = (res & 0x80) != 0;
@@ -284,8 +314,11 @@ impl Z80 {
 
     // Helper for 16-bit ADD operations (e.g., ADD HL, BC)
     fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32) {
+        // flgs s, z, pv are unaffected
         self.set_flag_n(false); // N flag is always reset for ADD
+        // c flag is set if carry from bit 15; otherwise, it is reset.
         self.set_flag_c((result & 0x10000) != 0);
+        // h flag is set if carry from bit 11; otherwise, it is reset.
         self.set_flag_h(((op1 ^ op2 ^ result as u16) & 0x1000) != 0);
         self.set_flags_xy_from_result((result >> 8) as u8);
     }
@@ -391,55 +424,57 @@ impl Z80 {
         self.r = (self.r & 0x80) | ((self.r + 1) & 0x7F);
 
         match opcode {
-            0x00 => 4, // NOP
+            0x00 => { // NOP
+                // flags unchanged
+                4
+            }
             0x01 => { // LD BC, nn
                 let nn = self.read_word_pc(bus);
                 self.set_bc(nn);
+                // flags unchanged
                 10
             }
             0x02 => { // LD (BC), A
                 bus.write_byte(self.get_bc(), self.a);
+                // flags unchanged
                 7
             }
             0x03 => { // INC BC
                 let bc = self.get_bc().wrapping_add(1);
                 self.set_bc(bc);
+                // flags unchanged
                 6
             }
             0x04 => { // INC B
-                let res = self.b.wrapping_add(1);
-                self.set_flags_add(self.b, 1, res as u16);
-                self.b = res;
+                self.b = self.b.wrapping_add(1);
+                // flags
+                self.set_flags_inc_r8(self.b);
                 4
             }
             0x05 => { // DEC B
-                let res = self.b.wrapping_sub(1);
-                self.set_flags_sub(self.b, 1, res as i16);
-                self.b = res;
+                self.b = self.b.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.b);
                 4
             }
             0x06 => { // LD B, n
                 self.b = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x07 => { // RLCA
                 let old_a = self.a;
-                let carry = (old_a & 0x80) != 0;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
-                // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
-                self.set_flag_c(carry);
+                self.set_flag_c((old_a & 0x80) != 0);
                 self.set_flags_xy_from_result(self.a);
                 4
             }
             0x08 => { // EX AF, AF'
-                let temp_a = self.a;
-                let temp_f = self.f;
-                self.a = self.a_alt;
-                self.f = self.f_alt;
-                self.a_alt = temp_a;
-                self.f_alt = temp_f;
+                (self.a, self.f, self.a_alt, self.f_alt) = (self.a_alt, self.f_alt, self.a, self.f);
+                // flags exchanged above
                 4
             }
             0x09 => { // ADD HL, BC
@@ -447,42 +482,45 @@ impl Z80 {
                 let op2 = self.get_bc();
                 let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
+                // flags
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x0A => { // LD A, (BC)
                 self.a = bus.read_byte(self.get_bc());
+                // flags unchanged
                 7
             }
             0x0B => { // DEC BC
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
+                // flags unchanged
                 6
             }
             0x0C => { // INC C
-                let res = self.c.wrapping_add(1);
-                self.set_flags_add(self.c, 1, res as u16);
-                self.c = res;
+                self.c = self.c.wrapping_add(1);
+                // flags
+                self.set_flags_inc_r8(self.c);
                 4
             }
             0x0D => { // DEC C
-                let res = self.c.wrapping_sub(1);
-                self.set_flags_sub(self.c, 1, res as i16);
-                self.c = res;
+                self.c = self.c.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.c);
                 4
             }
             0x0E => { // LD C, n
                 self.c = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x0F => { // RRCA
                 let old_a = self.a;
-                let carry = (old_a & 0x01) != 0;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
-                // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
-                self.set_flag_c(carry);
+                self.set_flag_c((old_a & 0x01) != 0);
                 self.set_flags_xy_from_result(self.a);
                 4
             }
@@ -495,35 +533,40 @@ impl Z80 {
                 } else {
                     8
                 }
+                // flags unchanged
             }
             0x11 => { // LD DE, nn
                 let nn = self.read_word_pc(bus);
                 self.set_de(nn);
+                // flags unchanged
                 10
             }
             0x12 => { // LD (DE), A
                 bus.write_byte(self.get_de(), self.a);
+                // flags unchanged
                 7
             }
             0x13 => { // INC DE
                 let de = self.get_de().wrapping_add(1);
                 self.set_de(de);
+                // flags unchanged
                 6
             }
             0x14 => { // INC D
-                let res = self.d.wrapping_add(1);
-                self.set_flags_add(self.d, 1, res as u16);
-                self.d = res;
+                self.d = self.d.wrapping_add(1);
+                // flags
+                self.set_flags_inc_r8(self.d);
                 4
             }
             0x15 => { // DEC D
-                let res = self.d.wrapping_sub(1);
-                self.set_flags_sub(self.d, 1, res as i16);
-                self.d = res;
+                self.d = self.d.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.d);
                 4
             }
             0x16 => { // LD D, n
                 self.d = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x17 => { // RLA
@@ -531,7 +574,7 @@ impl Z80 {
                 let carry_out = (old_a & 0x80) != 0; // Carry is old bit 7
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
                 self.a = (old_a << 1) | (if carry_in { 1 } else { 0 });
-                // Flags: C = old bit 7. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_c(carry_out);
@@ -541,6 +584,7 @@ impl Z80 {
             0x18 => { // JR d
                 let d = self.read_byte_pc(bus) as i8;
                 self.pc = self.pc.wrapping_add(d as u16);
+                // flags unchanged
                 12
             }
             0x19 => { // ADD HL, DE
@@ -548,32 +592,36 @@ impl Z80 {
                 let op2 = self.get_de();
                 let result = (op1 as u32) + (op2 as u32);
                 self.set_hl(result as u16);
+                // flags
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
             0x1A => { // LD A, (DE)
                 self.a = bus.read_byte(self.get_de());
+                // flags unchanged
                 7
             }
             0x1B => { // DEC DE
                 let de = self.get_de().wrapping_sub(1);
                 self.set_de(de);
+                // flags unchanged
                 6
             }
             0x1C => { // INC E
-                let res = self.e.wrapping_add(1);
-                self.set_flags_add(self.e, 1, res as u16);
-                self.e = res;
+                self.e = self.e.wrapping_add(1);
+                // flags
+                self.set_flags_inc_r8(self.e);
                 4
             }
             0x1D => { // DEC E
-                let res = self.e.wrapping_sub(1);
-                self.set_flags_sub(self.e, 1, res as i16);
-                self.e = res;
+                self.e = self.e.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.e);
                 4
             }
             0x1E => { // LD E, n
                 self.e = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
             0x1F => { // RRA
@@ -581,7 +629,7 @@ impl Z80 {
                 let carry_out = (old_a & 0x01) != 0; // Carry is old bit 0
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
                 self.a = (old_a >> 1) | (if carry_in { 0x80 } else { 0 });
-                // Flags: C = old bit 0. H=0, N=0. S, Z, PV preserved. X, Y from new A.
+                // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_c(carry_out);
@@ -596,38 +644,44 @@ impl Z80 {
                 } else {
                     7
                 }
+                // flags unchanged
             }
             0x21 => { // LD HL, nn
                 let nn = self.read_word_pc(bus);
                 self.set_hl(nn);
+                // flags unchanged
                 10
             }
             0x22 => { // LD (nn), HL
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.l);
                 bus.write_byte(nn.wrapping_add(1), self.h);
+                // flags unchanged
                 16
             }
             0x23 => { // INC HL
                 self.set_hl(self.get_hl().wrapping_add(1));
+                // flags unchanged
                 6
             }
             0x24 => { // INC H
-                let res = self.h.wrapping_add(1);
-                self.set_flags_add(self.h, 1, res as u16);
-                self.h = res;
+                self.h = self.h.wrapping_add(1);
+                // flags
+                self.set_flags_inc_r8(self.h);
                 4
             }
             0x25 => { // DEC H
-                let res = self.h.wrapping_sub(1);
-                self.set_flags_sub(self.h, 1, res as i16);
-                self.h = res;
+                self.h = self.h.wrapping_sub(1);
+                // flags
+                self.set_flags_dec_r8(self.h);
                 4
             }
             0x26 => { // LD H, n
                 self.h = self.read_byte_pc(bus);
+                // flags unchanged
                 7
             }
+            // <========================TODO: check flags for all instructions========================>            
             0x27 => { // DAA
                 let mut correction = 0;
                 let n_flag = (self.f & F_N) != 0; // preserve N
@@ -682,15 +736,13 @@ impl Z80 {
                 6
             }
             0x2C => { // INC L
-                let res = self.l.wrapping_add(1);
-                self.set_flags_add(self.l, 1, res as u16);
-                self.l = res;
+                self.l = self.l.wrapping_add(1);
+                self.set_flags_inc_r8(self.l);
                 4
             }
             0x2D => { // DEC L
-                let res = self.l.wrapping_sub(1);
-                self.set_flags_sub(self.l, 1, res as i16);
-                self.l = res;
+                self.l = self.l.wrapping_sub(1);
+                self.set_flags_dec_r8(self.l);
                 4
             }
             0x2E => { // LD L, n
@@ -733,7 +785,7 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_add(1);
                 bus.write_byte(addr, res);
-                self.set_flags_add(val, 1, res as u16);
+                self.set_flags_inc_r8(res);
                 11
             }
             0x35 => { // DEC (HL)
@@ -741,7 +793,7 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_sub(1);
                 bus.write_byte(addr, res);
-                self.set_flags_sub(val, 1, res as i16);
+                self.set_flags_dec_r8(res);
                 11
             }
             0x36 => { // LD (HL), n
@@ -783,10 +835,8 @@ impl Z80 {
                 6
             }
             0x3C => { // INC A
-                let res = self.a.wrapping_add(1);
-                self.set_flags_add(self.a, 1, res as u16);
-                self.set_flag_n(false);
-                self.a = res;
+                self.a = self.a.wrapping_add(1);
+                self.set_flags_inc_r8(self.a);
                 4
             }
             0x3D => { // DEC A
@@ -2852,8 +2902,7 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_add(1);
                 bus.write_byte(addr, val);
-                self.set_flags_add(val, 1, val as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(val);
                 23
             }
             0x35 => { // DEC (IX+d)
@@ -2861,7 +2910,7 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_sub(1);
                 bus.write_byte(addr, val);
-                self.set_flags_sub(val, 1, val as i16);
+                self.set_flags_dec_r8(val);
                 23
             }
             0x36 => { // LD (IX+d), n
@@ -3432,8 +3481,7 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_add(1);
                 bus.write_byte(addr, val);
-                self.set_flags_add(val, 1, val as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(val);
                 23
             }
             0x35 => { // DEC (IY+d)
@@ -3441,7 +3489,7 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_sub(1);
                 bus.write_byte(addr, val);
-                self.set_flags_sub(val, 1, val as i16);
+                self.set_flags_dec_r8(val);
                 23
             }
             0x36 => { // LD (IY+d), n
