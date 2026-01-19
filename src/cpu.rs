@@ -294,7 +294,7 @@ impl Z80 {
         let y = (res & 0x20) != 0;
         let h = ((a ^ b ^ res) & 0x10) != 0;
         let x = (res & 0x08) != 0;
-        let overflow = ((a ^ res) & ((!b) ^ res) & 0x80) != 0;
+        let overflow = ((a ^ b) & (a ^ res)) & 0x80 != 0;
         let n = true;
         let c = result < 0;
         self.set_all_flags(s, z, y, h, x, overflow, n, c);
@@ -323,19 +323,32 @@ impl Z80 {
         self.set_flags_xy_from_result((result >> 8) as u8);
     }
 
-    // Helper for 16-bit SBC operations (e.g., SBC HL, BC)
-    fn set_hl_flags_sub(&mut self, op1: u16, op2: u16, result: i32) {
-        let result_u16 = result as u16;
-        let s = (result_u16 & 0x8000) != 0;
-        let z = result_u16 == 0;
-        let result_hi = (result_u16 >> 8) as u8;
-        let y = (result_hi & F_Y) != 0;
-        let h = ((op1 ^ op2 ^ result_u16) & 0x1000) != 0;
-        let x = (result_hi & F_X) != 0;
-        let overflow = ((op1 ^ result_u16) & ((!op2).wrapping_add(1) ^ result_u16) & 0x8000) != 0;
-        let n = true;
-        let c = result < 0;
-        self.set_all_flags(s, z, y, h, x, overflow, n, c);
+    fn add8(&mut self, a: u8, b: u8) -> u8 {
+        let result = a as u16 + b as u16;
+        self.set_flags_add(a, b, result);
+        result as u8
+    }
+
+    fn sub8(&mut self, a: u8, b: u8) -> u8 {
+        let result = a as i16 - b as i16;
+        self.set_flags_sub(a, b, result);
+        result as u8
+    }
+
+    fn adc8(&mut self, a: u8, b: u8) -> u8 {
+        let carry = (self.f & F_C) != 0;
+        let carry_u8 = if carry { 1 } else { 0 };
+        let result = a as u16 + b as u16 + carry_u8 as u16;
+        self.set_flags_add(a, b + carry_u8, result);
+        result as u8
+    }
+
+    fn sbc8(&mut self, a: u8, b: u8) -> u8 {
+        let carry = (self.f & F_C) != 0;
+        let carry_u8 = if carry { 1 } else { 0 };
+        let result = a as i16 - b as i16 - carry_u8 as i16;
+        self.set_flags_sub(a, b + carry_u8, result);
+        result as u8
     }
 
     fn set_flags_and(&mut self, result: u8) {
@@ -368,9 +381,9 @@ impl Z80 {
         let bit_is_set = (val & (1 << bit)) != 0;
         let s = bit_is_set && bit == 7; // Set if n = 7 and tested bit is set.
         let z = !bit_is_set;
-        let y = bit_is_set && bit == 5;
+        let y = (val & F_Y) != 0;
         let h = true;
-        let x = bit_is_set && bit == 3;
+        let x = (val & F_X) != 0;
         let pv = !bit_is_set;
         let n = false;
         let c = (self.f & F_C) != 0; // Preserve carry
@@ -1193,152 +1206,98 @@ impl Z80 {
             }
             // <========================TODO: check flags for all instructions========================>
             0x80 => { // ADD A, B
-                let result = self.a as u16 + self.b as u16;
-                self.set_flags_add(self.a, self.b, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.b);
                 4
             }
             0x81 => { // ADD A, C
-                let result = self.a as u16 + self.c as u16;
-                self.set_flags_add(self.a, self.c, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.c);
                 4
             }
             0x82 => { // ADD A, D
-                let result = self.a as u16 + self.d as u16;
-                self.set_flags_add(self.a, self.d, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.d);
                 4
             }
             0x83 => { // ADD A, E
-                let result = self.a as u16 + self.e as u16;
-                self.set_flags_add(self.a, self.e, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.e);
                 4
             }
             0x84 => { // ADD A, H
-                let result = self.a as u16 + self.h as u16;
-                self.set_flags_add(self.a, self.h, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.h);
                 4
             }
             0x85 => { // ADD A, L
-                let result = self.a as u16 + self.l as u16;
-                self.set_flags_add(self.a, self.l, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.l);
                 4
             }
             0x86 => { // ADD A, (HL)
                 let val = bus.read_byte(self.get_hl());
-                let result = self.a as u16 + val as u16;
-                self.set_flags_add(self.a, val, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, val);
                 7
             }
             0x87 => { // ADD A, A
-                let result = self.a as u16 + self.a as u16;
-                self.set_flags_add(self.a, self.a, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, self.a);
                 4
             }
             0x88 => { // ADC A, B
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.b as u16 + carry;
-                self.set_flags_add(self.a, self.b + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.b);
                 4
             }
             0x89 => { // ADC A, C
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.c as u16 + carry;
-                self.set_flags_add(self.a, self.c + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.c);
                 4
             }
             0x8A => { // ADC A, D
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.d as u16 + carry;
-                self.set_flags_add(self.a, self.d + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.d);
                 4
             }
             0x8B => { // ADC A, E
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.e as u16 + carry;
-                self.set_flags_add(self.a, self.e + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.e);
                 4
             }
             0x8C => { // ADC A, H
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.h as u16 + carry;
-                self.set_flags_add(self.a, self.h + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.h);
                 4
             }
             0x8D => { // ADC A, L
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.l as u16 + carry;
-                self.set_flags_add(self.a, self.l + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.l);
                 4
             }
             0x8E => { // ADC A, (HL)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let val = bus.read_byte(self.get_hl());
-                let result = self.a as u16 + val as u16 + carry;
-                self.set_flags_add(self.a, val + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, val);
                 7
             }
             0x8F => { // ADC A, A
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as u16 + self.a as u16 + carry;
-                self.set_flags_add(self.a, self.a + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, self.a);
                 4
             }
             0x90 => { // SUB B
-                let result = self.a as i16 - self.b as i16;
-                self.set_flags_sub(self.a, self.b, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.b);
                 4
             }
             0x91 => { // SUB C
-                let result = self.a as i16 - self.c as i16;
-                self.set_flags_sub(self.a, self.c, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.c);
                 4
             }
             0x92 => { // SUB D
-                let result = self.a as i16 - self.d as i16;
-                self.set_flags_sub(self.a, self.d, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.d);
                 4
             }
             0x93 => { // SUB E
-                let result = self.a as i16 - self.e as i16;
-                self.set_flags_sub(self.a, self.e, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.e);
                 4
             }
             0x94 => { // SUB H
-                let result = self.a as i16 - self.h as i16;
-                self.set_flags_sub(self.a, self.h, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.h);
                 4
             }
             0x95 => { // SUB L
-                let result = self.a as i16 - self.l as i16;
-                self.set_flags_sub(self.a, self.l, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, self.l);
                 4
             }
             0x96 => { // SUB (HL)
                 let val = bus.read_byte(self.get_hl());
-                let result = self.a as i16 - val as i16;
-                self.set_flags_sub(self.a, val, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, val);
                 7
             }
             0x97 => { // SUB A
@@ -1347,60 +1306,36 @@ impl Z80 {
                 4
             }
             0x98 => { // SBC A, B
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.b as i16 - carry;
-                self.set_flags_sub(self.a, self.b, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.b);
                 4
             }
             0x99 => { // SBC A, C
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.c as i16 - carry;
-                self.set_flags_sub(self.a, self.c + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.c);
                 4
             }
             0x9A => { // SBC A, D
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.d as i16 - carry;
-                self.set_flags_sub(self.a, self.d + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.d);
                 4
             }
             0x9B => { // SBC A, E
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.e as i16 - carry;
-                self.set_flags_sub(self.a, self.e + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.e);
                 4
             }
             0x9C => { // SBC A, H
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.h as i16 - carry;
-                self.set_flags_sub(self.a, self.h + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.h);
                 4
             }
             0x9D => { // SBC A, L
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.l as i16 - carry;
-                self.set_flags_sub(self.a, self.l + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.l);
                 4
             }
             0x9E => { // SBC A, (HL)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let val = bus.read_byte(self.get_hl());
-                let result = self.a as i16 - val as i16 - carry;
-                self.set_flags_sub(self.a, val, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, val);
                 7
             }
             0x9F => { // SBC A, A
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = self.a as i16 - self.a as i16 - carry;
-                self.set_flags_sub(self.a, self.a + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, self.a);
                 4
             }
             0xA0 => { // AND B
@@ -1525,39 +1460,32 @@ impl Z80 {
                 4
             }
             0xB8 => { // CP B
-                let result = self.a as i16 - self.b as i16;
-                self.set_flags_sub(self.a, self.b, result);
+                self.sub8(self.a, self.b);
                 4
             }
             0xB9 => { // CP C
-                let result = self.a as i16 - self.c as i16;
-                self.set_flags_sub(self.a, self.c, result);
+                self.sub8(self.a, self.c);
                 4
             }
             0xBA => { // CP D
-                let result = self.a as i16 - self.d as i16;
-                self.set_flags_sub(self.a, self.d, result);
+                self.sub8(self.a, self.d);
                 4
             }
             0xBB => { // CP E
-                let result = self.a as i16 - self.e as i16;
-                self.set_flags_sub(self.a, self.e, result);
+                self.sub8(self.a, self.e);
                 4
             }
             0xBC => { // CP H
-                let result = self.a as i16 - self.h as i16;
-                self.set_flags_sub(self.a, self.h, result);
+                self.sub8(self.a, self.h);
                 4
             }
             0xBD => { // CP L
-                let result = self.a as i16 - self.l as i16;
-                self.set_flags_sub(self.a, self.l, result);
+                self.sub8(self.a, self.l);
                 4
             }
             0xBE => { // CP (HL)
                 let val = bus.read_byte(self.get_hl());
-                let result = self.a as i16 - val as i16;
-                self.set_flags_sub(self.a, val, result);
+                self.sub8(self.a, val);
                 7
             }
             0xBF => { // CP A
@@ -1604,9 +1532,7 @@ impl Z80 {
             }
             0xC6 => { // ADD A, n
                 let n = self.read_byte_pc(bus);
-                let result = self.a as u16 + n as u16;
-                self.set_flags_add(self.a, n, result);
-                self.a = result as u8;
+                self.a = self.add8(self.a, n);
                 7
             }
             0xC7 => { // RST 00
@@ -1653,11 +1579,8 @@ impl Z80 {
                 17
             }
             0xCE => { // ADC A, n
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let n = self.read_byte_pc(bus);
-                let result = self.a as u16 + n as u16 + carry;
-                self.set_flags_add(self.a, n + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.adc8(self.a, n);
                 7
             }
             0xCF => { // RST 08
@@ -1706,9 +1629,7 @@ impl Z80 {
             }
             0xD6 => { // SUB n
                 let n = self.read_byte_pc(bus);
-                let result = self.a as i16 - n as i16;
-                self.set_flags_sub(self.a, n, result);
-                self.a = result as u8;
+                self.a = self.sub8(self.a, n);
                 7
             }
             0xD7 => { // RST 10
@@ -1762,11 +1683,8 @@ impl Z80 {
                 self.step_dd(bus)
             }
             0xDE => { // SBC A, n
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let n = self.read_byte_pc(bus);
-                let result = self.a as i16 - n as i16 - carry;
-                self.set_flags_sub(self.a, n + carry as u8, result);
-                self.a = result as u8;
+                self.a = self.sbc8(self.a, n);
                 7
             }
             0xDF => { // RST 18
@@ -1963,8 +1881,7 @@ impl Z80 {
             }
             0xFE => { // CP n
                 let n = self.read_byte_pc(bus);
-                let result = self.a as i16 - n as i16;
-                self.set_flags_sub(self.a, n, result);
+                self.sub8(self.a, n);
                 7
             }
             0xFF => { // RST 38
