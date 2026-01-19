@@ -1207,35 +1207,43 @@ impl Z80 {
             // <========================TODO: check flags for all instructions========================>
             0x80 => { // ADD A, B
                 self.a = self.add8(self.a, self.b);
+                // flags changed in add8
                 4
             }
             0x81 => { // ADD A, C
                 self.a = self.add8(self.a, self.c);
+                // flags changed in add8
                 4
             }
             0x82 => { // ADD A, D
                 self.a = self.add8(self.a, self.d);
+                // flags changed in add8
                 4
             }
             0x83 => { // ADD A, E
                 self.a = self.add8(self.a, self.e);
+                // flags changed in add8
                 4
             }
             0x84 => { // ADD A, H
                 self.a = self.add8(self.a, self.h);
+                // flags changed in add8
                 4
             }
             0x85 => { // ADD A, L
                 self.a = self.add8(self.a, self.l);
+                // flags changed in add8
                 4
             }
             0x86 => { // ADD A, (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a = self.add8(self.a, val);
+                // flags changed in add8
                 7
             }
             0x87 => { // ADD A, A
                 self.a = self.add8(self.a, self.a);
+                // flags changed in add8
                 4
             }
             0x88 => { // ADC A, B
