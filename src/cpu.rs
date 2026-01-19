@@ -269,6 +269,7 @@ impl Z80 {
         self.set_flag_s((r & 0x80) != 0);
         self.set_flag_z(r == 0);
         self.set_flag_y((r & F_Y) != 0);
+        // TODO: Half-carry flag for INC
         self.set_flag_h((r & 0x0F) == 0);
         self.set_flag_x((r & F_X) != 0);
         self.set_flag_pv(r == 0x80);
@@ -1971,9 +1972,6 @@ impl Z80 {
                 self.push(bus, self.pc);
                 self.pc = 0x38;
                 11
-            }
-            _ => {
-                panic!("Unimplemented opcode: 0x{:02X}", opcode);
             }
         }
     }

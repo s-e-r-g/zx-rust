@@ -36,6 +36,26 @@ const PALETTE: [[u8; 4]; 16] = [
     [0xFF, 0xFF, 0xFF, 0xFF], // 15: Bright White
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Key {
+    // Row 0
+    Shift, Z, X, C, V,
+    // Row 1
+    A, S, D, F, G,
+    // Row 2
+    Q, W, E, R, T,
+    // Row 3
+    Num1, Num2, Num3, Num4, Num5,
+    // Row 4
+    Num0, Num9, Num8, Num7, Num6,
+    // Row 5
+    P, O, I, U, Y,
+    // Row 6
+    Enter, L, K, J, H,
+    // Row 7
+    Space, Sym, M, N, B,
+}
+
 pub trait Memory {
     fn read_byte(&self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, val: u8);
@@ -139,15 +159,28 @@ pub struct MachineZxSpectrum48 {
     t_states: u32,
     frame_ready: bool,
     pub screen_buffer: Vec<u8>,
+    keyboard: [u8; 8],
 }
 
 
 impl Ports for MachineZxSpectrum48 {
     fn read_port(&self, port: u16) -> u8 {
-        // Simple mock for 48K Spectrum
         // Port 0xFE (Keyboard/Ear)
-        if (port & 0x01) == 0 {
-            return 0xFF; // No keys pressed
+        if (port & 0x0001) == 0 {
+            let mut result = 0xFF;
+            // Check address lines A8-A15 to see which key row is being scanned
+            if (port & 0x0100) == 0 { result &= self.keyboard[0]; } // A8
+            if (port & 0x0200) == 0 { result &= self.keyboard[1]; } // A9
+            if (port & 0x0400) == 0 { result &= self.keyboard[2]; } // A10
+            if (port & 0x0800) == 0 { result &= self.keyboard[3]; } // A11
+            if (port & 0x1000) == 0 { result &= self.keyboard[4]; } // A12
+            if (port & 0x2000) == 0 { result &= self.keyboard[5]; } // A13
+            if (port & 0x4000) == 0 { result &= self.keyboard[6]; } // A14
+            if (port & 0x8000) == 0 { result &= self.keyboard[7]; } // A15
+            
+            // Bit 6 is for EAR, usually high.
+            // Bits 5 and 7 are floating.
+            return (result & 0x1F) | 0x40;
         }
         0xFF
     }
@@ -174,6 +207,65 @@ impl Bus for MachineZxSpectrum48 {}
 
 
 impl MachineZxSpectrum48 {
+    pub fn set_key_state(&mut self, key: Key, pressed: bool) {
+        let (row, bit) = match key {
+            // Row 0 (SHIFT, Z, X, C, V)
+            Key::Shift => (0, 0),
+            Key::Z => (0, 1),
+            Key::X => (0, 2),
+            Key::C => (0, 3),
+            Key::V => (0, 4),
+            // Row 1 (A, S, D, F, G)
+            Key::A => (1, 0),
+            Key::S => (1, 1),
+            Key::D => (1, 2),
+            Key::F => (1, 3),
+            Key::G => (1, 4),
+            // Row 2 (Q, W, E, R, T)
+            Key::Q => (2, 0),
+            Key::W => (2, 1),
+            Key::E => (2, 2),
+            Key::R => (2, 3),
+            Key::T => (2, 4),
+            // Row 3 (1, 2, 3, 4, 5)
+            Key::Num1 => (3, 0),
+            Key::Num2 => (3, 1),
+            Key::Num3 => (3, 2),
+            Key::Num4 => (3, 3),
+            Key::Num5 => (3, 4),
+            // Row 4 (0, 9, 8, 7, 6)
+            Key::Num0 => (4, 0),
+            Key::Num9 => (4, 1),
+            Key::Num8 => (4, 2),
+            Key::Num7 => (4, 3),
+            Key::Num6 => (4, 4),
+            // Row 5 (P, O, I, U, Y)
+            Key::P => (5, 0),
+            Key::O => (5, 1),
+            Key::I => (5, 2),
+            Key::U => (5, 3),
+            Key::Y => (5, 4),
+            // Row 6 (ENTER, L, K, J, H)
+            Key::Enter => (6, 0),
+            Key::L => (6, 1),
+            Key::K => (6, 2),
+            Key::J => (6, 3),
+            Key::H => (6, 4),
+            // Row 7 (SPACE, SYM, M, N, B)
+            Key::Space => (7, 0),
+            Key::Sym => (7, 1),
+            Key::M => (7, 2),
+            Key::N => (7, 3),
+            Key::B => (7, 4),
+        };
+
+        if pressed {
+            self.keyboard[row] &= !(1 << bit);
+        } else {
+            self.keyboard[row] |= 1 << bit;
+        }
+    }
+
     pub fn new() -> Self {
         let mut machine = Self {
             ula: Ula::new(),
@@ -185,6 +277,7 @@ impl MachineZxSpectrum48 {
             t_states: 0,
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
+            keyboard: [0xFF; 8],
         };
         machine.load_rom();
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
