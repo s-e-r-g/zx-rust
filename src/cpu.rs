@@ -2813,14 +2813,21 @@ impl Z80 {
             0xA0 => { // LDI
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
-                let hl = self.get_hl().wrapping_add(1);
-                self.set_hl(hl);
-                let de = self.get_de().wrapping_add(1);
-                self.set_de(de);
+                
+                self.set_hl(self.get_hl().wrapping_add(1));
+                self.set_de(self.get_de().wrapping_add(1));
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
-                self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (self.a & (F_Y | F_X));
+
+                // Update flags
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_pv(bc != 0);
+
+                // Undocumented flags
+                let temp = self.a.wrapping_add(val);
+                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+
                 16
             }
             0xA1 => { // CPI
@@ -2863,37 +2870,75 @@ impl Z80 {
                 self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
                 16
             }
+            0xA8 => { // LDD
+                let val = bus.read_byte(self.get_hl());
+                bus.write_byte(self.get_de(), val);
+
+                self.set_hl(self.get_hl().wrapping_sub(1));
+                self.set_de(self.get_de().wrapping_sub(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                // Update flags
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_pv(bc != 0);
+
+                // Undocumented flags
+                let temp = self.a.wrapping_add(val);
+                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+
+                16
+            }
             0xB0 => { // LDIR
-                let mut tstates = 0u32;
-                loop {
-                    let val = bus.read_byte(self.get_hl());
-                    bus.write_byte(self.get_de(), val);
-                    self.set_hl(self.get_hl().wrapping_add(1));
-                    self.set_de(self.get_de().wrapping_add(1));
-                    self.set_bc(self.get_bc().wrapping_sub(1));
-                    tstates += 21;
-                    if self.get_bc() == 0 {
-                        self.f &= !F_PV;
-                        break;
-                    }
+                let val = bus.read_byte(self.get_hl());
+                bus.write_byte(self.get_de(), val);
+
+                self.set_hl(self.get_hl().wrapping_add(1));
+                self.set_de(self.get_de().wrapping_add(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                // Update flags
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_pv(bc != 0);
+
+                // Undocumented flags
+                let temp = self.a.wrapping_add(val);
+                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+
+                if bc != 0 {
+                    self.pc = self.pc.wrapping_sub(2);
+                    21
+                } else {
+                    16
                 }
-                tstates
             }
             0xB8 => { // LDDR
-                let mut tstates = 0u32;
-                loop {
-                    let val = bus.read_byte(self.get_hl());
-                    bus.write_byte(self.get_de(), val);
-                    self.set_hl(self.get_hl().wrapping_sub(1));
-                    self.set_de(self.get_de().wrapping_sub(1));
-                    self.set_bc(self.get_bc().wrapping_sub(1));
-                    tstates += 21;
-                    if self.get_bc() == 0 {
-                        self.f &= !F_PV;
-                        break;
-                    }
+                let val = bus.read_byte(self.get_hl());
+                bus.write_byte(self.get_de(), val);
+
+                self.set_hl(self.get_hl().wrapping_sub(1));
+                self.set_de(self.get_de().wrapping_sub(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                // Update flags
+                self.set_flag_h(false);
+                self.set_flag_n(false);
+                self.set_flag_pv(bc != 0);
+
+                // Undocumented flags
+                let temp = self.a.wrapping_add(val);
+                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+
+                if bc != 0 {
+                    self.pc = self.pc.wrapping_sub(2);
+                    21
+                } else {
+                    16
                 }
-                tstates
             }
             _ => {
                 panic!("Unimplemented ED opcode: 0x{:02X}", opcode);
@@ -4506,14 +4551,63 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0xED, 0xA0])); // LDI
         machine.cpu.set_hl(0x1000);
         machine.cpu.set_de(0x2000);
-        machine.cpu.set_bc(1);
+        machine.cpu.set_bc(2); // bc becomes 1
         machine.ram[0x1000] = 0xAB;
+        machine.cpu.f = F_S | F_Z | F_C; // To check they are preserved
+        machine.cpu.a = 0x12;
+
         let cycles = machine.step();
         assert_eq!(machine.ram[0x2000], 0xAB);
         assert_eq!(machine.cpu.get_hl(), 0x1001);
         assert_eq!(machine.cpu.get_de(), 0x2001);
-        assert_eq!(machine.cpu.get_bc(), 0);
+        assert_eq!(machine.cpu.get_bc(), 1);
         assert_eq!(cycles, 16);
+
+        // Check flags
+        assert_eq!(machine.cpu.f & F_S, F_S, "S should be preserved");
+        assert_eq!(machine.cpu.f & F_Z, F_Z, "Z should be preserved");
+        assert_eq!(machine.cpu.f & F_C, F_C, "C should be preserved");
+        assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
+        assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
+        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
+        
+        // Undocumented flags
+        // A(0x12) + val(0xAB) = 0xBD = 10111101
+        // X flag (bit 3) is 1, Y flag (bit 5) is 1
+        assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
+        assert_eq!(machine.cpu.f & F_Y, F_Y, "Y should be set");
+    }
+
+    #[test]
+    fn test_ed_a8_ldd() {
+        let mut machine = TestMachine::new(Some(vec![0xED, 0xA8])); // LDD
+        machine.cpu.set_hl(0x1001);
+        machine.cpu.set_de(0x2001);
+        machine.cpu.set_bc(2); // bc becomes 1
+        machine.ram[0x1001] = 0xAB;
+        machine.cpu.f = F_S | F_Z | F_C; // To check they are preserved
+        machine.cpu.a = 0x12;
+
+        let cycles = machine.step();
+        assert_eq!(machine.ram[0x2001], 0xAB);
+        assert_eq!(machine.cpu.get_hl(), 0x1000);
+        assert_eq!(machine.cpu.get_de(), 0x2000);
+        assert_eq!(machine.cpu.get_bc(), 1);
+        assert_eq!(cycles, 16);
+
+        // Check flags
+        assert_eq!(machine.cpu.f & F_S, F_S, "S should be preserved");
+        assert_eq!(machine.cpu.f & F_Z, F_Z, "Z should be preserved");
+        assert_eq!(machine.cpu.f & F_C, F_C, "C should be preserved");
+        assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
+        assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
+        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
+        
+        // Undocumented flags
+        // A(0x12) + val(0xAB) = 0xBD = 10111101
+        // X flag (bit 3) is 1, Y flag (bit 5) is 1
+        assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
+        assert_eq!(machine.cpu.f & F_Y, F_Y, "Y should be set");
     }
 
     #[test]
@@ -4525,14 +4619,75 @@ mod tests {
         machine.ram[0x1000] = 0x11;
         machine.ram[0x1001] = 0x22;
         machine.ram[0x1002] = 0x33;
-        let cycles = machine.step();
+
+        let mut total_cycles = 0;
+        // Should take 2 steps of 21 cycles, and 1 step of 16 cycles.
+        // After 1st step, bc=2, pc is back to 0
+        total_cycles += machine.step();
         assert_eq!(machine.ram[0x2000], 0x11);
+        assert_eq!(machine.cpu.get_hl(), 0x1001);
+        assert_eq!(machine.cpu.get_de(), 0x2001);
+        assert_eq!(machine.cpu.get_bc(), 2);
+        assert_eq!(machine.cpu.pc, 0); // still on LDIR
+        assert_eq!(total_cycles, 21);
+        
+        // After 2nd step, bc=1, pc is back to 0
+        total_cycles += machine.step();
         assert_eq!(machine.ram[0x2001], 0x22);
+        assert_eq!(machine.cpu.get_hl(), 0x1002);
+        assert_eq!(machine.cpu.get_de(), 0x2002);
+        assert_eq!(machine.cpu.get_bc(), 1);
+        assert_eq!(machine.cpu.pc, 0); // still on LDIR
+        assert_eq!(total_cycles, 21 + 21);
+
+        // After 3rd step, bc=0, pc moves on
+        total_cycles += machine.step();
         assert_eq!(machine.ram[0x2002], 0x33);
         assert_eq!(machine.cpu.get_hl(), 0x1003);
         assert_eq!(machine.cpu.get_de(), 0x2003);
         assert_eq!(machine.cpu.get_bc(), 0);
-        assert_eq!(cycles, 21 * 3);
+        assert_eq!(machine.cpu.pc, 2); // finished
+        assert_eq!(total_cycles, 21 + 21 + 16);
+    }
+    
+    #[test]
+    fn test_ed_b8_lddr() {
+        let mut machine = TestMachine::new(Some(vec![0xED, 0xB8])); // LDDR
+        machine.cpu.set_hl(0x1002);
+        machine.cpu.set_de(0x2002);
+        machine.cpu.set_bc(3);
+        machine.ram[0x1002] = 0x11;
+        machine.ram[0x1001] = 0x22;
+        machine.ram[0x1000] = 0x33;
+
+        let mut total_cycles = 0;
+        // Should take 2 steps of 21 cycles, and 1 step of 16 cycles.
+        // After 1st step, bc=2, pc is back to 0
+        total_cycles += machine.step();
+        assert_eq!(machine.ram[0x2002], 0x11);
+        assert_eq!(machine.cpu.get_hl(), 0x1001);
+        assert_eq!(machine.cpu.get_de(), 0x2001);
+        assert_eq!(machine.cpu.get_bc(), 2);
+        assert_eq!(machine.cpu.pc, 0); // still on LDDR
+        assert_eq!(total_cycles, 21);
+        
+        // After 2nd step, bc=1, pc is back to 0
+        total_cycles += machine.step();
+        assert_eq!(machine.ram[0x2001], 0x22);
+        assert_eq!(machine.cpu.get_hl(), 0x1000);
+        assert_eq!(machine.cpu.get_de(), 0x2000);
+        assert_eq!(machine.cpu.get_bc(), 1);
+        assert_eq!(machine.cpu.pc, 0); // still on LDDR
+        assert_eq!(total_cycles, 21 + 21);
+
+        // After 3rd step, bc=0, pc moves on
+        total_cycles += machine.step();
+        assert_eq!(machine.ram[0x2000], 0x33);
+        assert_eq!(machine.cpu.get_hl(), 0x0FFF);
+        assert_eq!(machine.cpu.get_de(), 0x1FFF);
+        assert_eq!(machine.cpu.get_bc(), 0);
+        assert_eq!(machine.cpu.pc, 2); // finished
+        assert_eq!(total_cycles, 21 + 21 + 16);
     }
 
     #[test]
