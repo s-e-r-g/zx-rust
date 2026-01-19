@@ -2606,6 +2606,12 @@ impl Z80 {
                 self.im = InterruptMode::IM0;
                 8
             }
+            0x4F => { // LD R,A
+                panic!("Unimplemented ED opcode: 0x4F LD R,A");
+            }
+            0x50 => { // IN D,(C)
+                panic!("Unimplemented ED opcode: 0x50 IN D,(C)");
+            }
             0x51 => { // OUT (C), D
                 bus.write_port(self.get_bc(), self.d);
                 12
@@ -2750,6 +2756,21 @@ impl Z80 {
                          (if ((hl ^ hl2 ^ result) & 0x1000) != 0 { F_H } else { 0 });
                 15
             }
+            0x63 => { // LD (nn), HL
+                panic!("Unimplemented ED opcode: 0x63 LD (nn), HL");
+            }
+            0x64 => { // NEG (undocumented)
+                panic!("Unimplemented ED opcode: 0x64 NEG");
+            }
+            0x65 => { // RETN (undocumented)
+                panic!("Unimplemented ED opcode: 0x65 RETN");
+            }
+            0x66 => { // IM 0 (undocumented)
+                panic!("Unimplemented ED opcode: 0x66 IM 0");
+            }
+            0x67 => { // RRD
+                panic!("Unimplemented ED opcode: 0x67 RRD");
+            }
             0x68 => { // IN L, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
@@ -2793,6 +2814,15 @@ impl Z80 {
                 bus.write_byte(nn.wrapping_add(1), (self.sp >> 8) as u8);
                 20
             }
+            0x74 => { // NEG (undocumented)
+                panic!("Unimplemented ED opcode: 0x74 NEG");
+            }
+            0x75 => { // RETN (undocumented)
+                panic!("Unimplemented ED opcode: 0x75 RETN");
+            }
+            0x76 => { // IM 1 (undocumented)
+                panic!("Unimplemented ED opcode: 0x76 IM 1");
+            }
             0x78 => { // IN A, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
@@ -2804,11 +2834,23 @@ impl Z80 {
                 bus.write_port(self.get_bc(), self.a);
                 12
             }
+            0x7A => { // ADC HL, SP
+                panic!("Unimplemented ED opcode: 0x7A ADC HL, SP");
+            }
             0x7B => { // LD SP, (nn)
                 let nn = self.read_word_pc(bus);
                 let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
                 self.sp = val;
                 20
+            }
+            0x7C => { // NEG (undocumented)
+                panic!("Unimplemented ED opcode: 0x7C NEG");
+            }
+            0x7D => { // RETN (undocumented)
+                panic!("Unimplemented ED opcode: 0x7D RETN");
+            }
+            0x7E => { // IM 2 (undocumented)
+                panic!("Unimplemented ED opcode: 0x7E IM 2");
             }
             0xA0 => { // LDI
                 let val = bus.read_byte(self.get_hl());
@@ -2878,6 +2920,12 @@ impl Z80 {
                 self.f &= !(F_H | F_N | F_PV);
                 self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
                 16
+            }
+            0xAA => { // IND
+                panic!("Unimplemented ED opcode: 0xAA IND");
+            }
+            0xAB => { // OUTD
+                panic!("Unimplemented ED opcode: 0xAB OUTD");
             }
             0xA8 => { // LDD
                 let val = bus.read_byte(self.get_hl());
@@ -2979,6 +3027,12 @@ impl Z80 {
                     16
                 }
             }
+            0xB2 => { // INIR
+                panic!("Unimplemented ED opcode: 0xB2 INIR");
+            }
+            0xB3 => { // OTIR
+                panic!("Unimplemented ED opcode: 0xB3 OTIR");
+            }
             0xB8 => { // LDDR
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
@@ -3033,6 +3087,12 @@ impl Z80 {
                 } else {
                     16
                 }
+            }
+            0xBA => { // INDR
+                panic!("Unimplemented ED opcode: 0xBA INDR");
+            }
+            0xBB => { // OTDR
+                panic!("Unimplemented ED opcode: 0xBB OTDR");
             }
             _ => {
                 panic!("Unimplemented ED opcode: 0x{:02X}", opcode);
