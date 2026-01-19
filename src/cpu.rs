@@ -2833,17 +2833,26 @@ impl Z80 {
             0xA1 => { // CPI
                 let val = bus.read_byte(self.get_hl());
                 let result = self.a.wrapping_sub(val);
-                let hl = self.get_hl().wrapping_add(1);
-                self.set_hl(hl);
+
+                self.set_hl(self.get_hl().wrapping_add(1));
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
-                self.f = (self.f & F_C) |
-                         (if (result & 0x80) != 0 { F_S } else { 0 }) |
-                         (if result == 0 { F_Z } else { 0 }) |
-                         (if ((self.a ^ val ^ result) & 0x10) != 0 { F_H } else { 0 }) |
-                         F_N |
-                         (if bc != 0 { F_PV } else { 0 }) |
-                         (self.a.wrapping_add( ((self.f & F_C) != 0) as u8 ) & (F_Y | F_X));
+
+                let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
+
+                // Standard flags
+                self.set_flag_s((result & 0x80) != 0);
+                self.set_flag_z(result == 0);
+                self.set_flag_h(h_flag);
+                self.set_flag_pv(bc != 0);
+                self.set_flag_n(true);
+                // C is not affected
+
+                // Undocumented flags
+                let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
+                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
+                self.set_flags_xy_from_result(xy_val);
+
                 16
             }
             0xA2 => { // INI
@@ -2890,6 +2899,31 @@ impl Z80 {
 
                 16
             }
+            0xA9 => { // CPD
+                let val = bus.read_byte(self.get_hl());
+                let result = self.a.wrapping_sub(val);
+
+                self.set_hl(self.get_hl().wrapping_sub(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
+
+                // Standard flags
+                self.set_flag_s((result & 0x80) != 0);
+                self.set_flag_z(result == 0);
+                self.set_flag_h(h_flag);
+                self.set_flag_pv(bc != 0);
+                self.set_flag_n(true);
+                // C is not affected
+
+                // Undocumented flags
+                let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
+                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
+                self.set_flags_xy_from_result(xy_val);
+                
+                16
+            }
             0xB0 => { // LDIR
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
@@ -2915,6 +2949,36 @@ impl Z80 {
                     16
                 }
             }
+            0xB1 => { // CPIR
+                let val = bus.read_byte(self.get_hl());
+                let result = self.a.wrapping_sub(val);
+
+                self.set_hl(self.get_hl().wrapping_add(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
+
+                // Standard flags
+                self.set_flag_s((result & 0x80) != 0);
+                self.set_flag_z(result == 0);
+                self.set_flag_h(h_flag);
+                self.set_flag_pv(bc != 0);
+                self.set_flag_n(true);
+                // C is not affected
+
+                // Undocumented flags
+                let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
+                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
+                self.set_flags_xy_from_result(xy_val);
+
+                if bc != 0 && result != 0 {
+                    self.pc = self.pc.wrapping_sub(2);
+                    21
+                } else {
+                    16
+                }
+            }
             0xB8 => { // LDDR
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
@@ -2934,6 +2998,36 @@ impl Z80 {
                 self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
 
                 if bc != 0 {
+                    self.pc = self.pc.wrapping_sub(2);
+                    21
+                } else {
+                    16
+                }
+            }
+            0xB9 => { // CPDR
+                let val = bus.read_byte(self.get_hl());
+                let result = self.a.wrapping_sub(val);
+
+                self.set_hl(self.get_hl().wrapping_sub(1));
+                let bc = self.get_bc().wrapping_sub(1);
+                self.set_bc(bc);
+
+                let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
+
+                // Standard flags
+                self.set_flag_s((result & 0x80) != 0);
+                self.set_flag_z(result == 0);
+                self.set_flag_h(h_flag);
+                self.set_flag_pv(bc != 0);
+                self.set_flag_n(true);
+                // C is not affected
+
+                // Undocumented flags
+                let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
+                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
+                self.set_flags_xy_from_result(xy_val);
+
+                if bc != 0 && result != 0 {
                     self.pc = self.pc.wrapping_sub(2);
                     21
                 } else {
@@ -5779,37 +5873,142 @@ mod tests {
         }
     
         #[test]
-        fn test_cb_bit_flags() {
-            // Test BIT 0, A
-            let mut machine = TestMachine::new(Some(vec![0xCB, 0x47])); // BIT 0, A
-            machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 0 is 0. Bit 3 is 1. Bit 5 is 1.
-            machine.cpu.f = F_C; // Start with carry set
-            
-            machine.step();
-            assert_eq!(machine.cpu.pc, 2);
-            assert_eq!((machine.cpu.f & F_S), 0, "S should be 0");
-            assert_ne!((machine.cpu.f & F_Z), 0, "Z should be 1");
-            assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
-            assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-            assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
-            assert_ne!((machine.cpu.f & F_PV), 0, "PV should be 1");
-            assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
-            assert_ne!((machine.cpu.f & F_C), 0, "C should be preserved");
-    
-            // Test BIT 7, A
-            let mut machine = TestMachine::new(Some(vec![0xCB, 0x7F])); // BIT 7, A
-            machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 7 is 1. Bit 3 is 1. Bit 5 is 1.
-            machine.cpu.f = 0; // Start with carry reset
-            machine.step();
-            assert_eq!(machine.cpu.pc, 2);
-            assert_ne!((machine.cpu.f & F_S), 0, "S should be 1");
-            assert_eq!((machine.cpu.f & F_Z), 0, "Z should be 0");
-            assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
-            assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-            assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
-            assert_eq!((machine.cpu.f & F_PV), 0, "PV should be 0");
-            assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
-            assert_eq!((machine.cpu.f & F_C), 0, "C should be preserved");
-        }
-    }
-    
+            fn test_cb_bit_flags() {
+                // Test BIT 0, A
+                let mut machine = TestMachine::new(Some(vec![0xCB, 0x47])); // BIT 0, A
+                machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 0 is 0. Bit 3 is 1. Bit 5 is 1.
+                machine.cpu.f = F_C; // Start with carry set
+                
+                machine.step();
+                assert_eq!(machine.cpu.pc, 2);
+                assert_eq!((machine.cpu.f & F_S), 0, "S should be 0");
+                assert_ne!((machine.cpu.f & F_Z), 0, "Z should be 1");
+                assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+                assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
+                assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+                assert_ne!((machine.cpu.f & F_PV), 0, "PV should be 1");
+                assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
+                assert_ne!((machine.cpu.f & F_C), 0, "C should be preserved");
+        
+                // Test BIT 7, A
+                let mut machine = TestMachine::new(Some(vec![0xCB, 0x7F])); // BIT 7, A
+                machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 7 is 1. Bit 3 is 1. Bit 5 is 1.
+                machine.cpu.f = 0; // Start with carry reset
+                machine.step();
+                assert_eq!(machine.cpu.pc, 2);
+                assert_ne!((machine.cpu.f & F_S), 0, "S should be 1");
+                assert_eq!((machine.cpu.f & F_Z), 0, "Z should be 0");
+                assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+                assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
+                assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+                assert_eq!((machine.cpu.f & F_PV), 0, "PV should be 0");
+                assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
+                assert_eq!((machine.cpu.f & F_C), 0, "C should be preserved");
+            }
+        
+            #[test]
+            fn test_ed_a1_cpi() {
+                let mut machine = TestMachine::new(Some(vec![0xED, 0xA1])); // CPI
+                machine.cpu.a = 0x20;
+                machine.cpu.set_hl(0x1000);
+                machine.ram[0x1000] = 0x10;
+                machine.cpu.set_bc(2); // so it becomes 1 and PV is set
+        
+                let cycles = machine.step();
+                assert_eq!(cycles, 16);
+                assert_eq!(machine.cpu.get_hl(), 0x1001);
+                assert_eq!(machine.cpu.get_bc(), 1);
+                
+                assert_eq!(machine.cpu.f & F_S, 0);
+                assert_eq!(machine.cpu.f & F_Z, 0);
+                assert_eq!(machine.cpu.f & F_H, 0);
+                assert_eq!(machine.cpu.f & F_PV, F_PV);
+                assert_eq!(machine.cpu.f & F_N, F_N);
+            }
+        
+            #[test]
+            fn test_ed_a9_cpd() {
+                let mut machine = TestMachine::new(Some(vec![0xED, 0xA9])); // CPD
+                machine.cpu.a = 0x20;
+                machine.cpu.set_hl(0x1000);
+                machine.ram[0x1000] = 0x20; // A == (HL)
+                machine.cpu.set_bc(2); // so it becomes 1 and PV is set
+        
+                let cycles = machine.step();
+                assert_eq!(cycles, 16);
+                assert_eq!(machine.cpu.get_hl(), 0x0FFF);
+                assert_eq!(machine.cpu.get_bc(), 1);
+                
+                assert_eq!(machine.cpu.f & F_S, 0);
+                assert_eq!(machine.cpu.f & F_Z, F_Z);
+                assert_eq!(machine.cpu.f & F_H, 0);
+                assert_eq!(machine.cpu.f & F_PV, F_PV);
+                assert_eq!(machine.cpu.f & F_N, F_N);
+            }
+        
+            #[test]
+            fn test_ed_b1_cpir() {
+                let mut machine = TestMachine::new(Some(vec![0xED, 0xB1])); // CPIR
+                machine.cpu.a = 0xFF;
+                machine.cpu.set_hl(0x1000);
+                machine.cpu.set_bc(3);
+                machine.ram[0x1000] = 0x01;
+                machine.ram[0x1001] = 0x02;
+                machine.ram[0x1002] = 0xFF;
+        
+                // 1st step
+                let cycles1 = machine.step();
+                assert_eq!(cycles1, 21);
+                assert_eq!(machine.cpu.get_bc(), 2);
+                assert_eq!(machine.cpu.get_hl(), 0x1001);
+                assert_eq!(machine.cpu.pc, 0); // still on CPIR
+        
+                // 2nd step
+                let cycles2 = machine.step();
+                assert_eq!(cycles2, 21);
+                assert_eq!(machine.cpu.get_bc(), 1);
+                assert_eq!(machine.cpu.get_hl(), 0x1002);
+                assert_eq!(machine.cpu.pc, 0); // still on CPIR
+        
+                // 3rd step (match found)
+                let cycles3 = machine.step();
+                assert_eq!(cycles3, 16);
+                assert_eq!(machine.cpu.get_bc(), 0);
+                assert_eq!(machine.cpu.get_hl(), 0x1003);
+                assert_eq!(machine.cpu.f & F_Z, F_Z);
+                assert_eq!(machine.cpu.pc, 2); // finished
+            }
+        
+            #[test]
+            fn test_ed_b9_cpdr() {
+                let mut machine = TestMachine::new(Some(vec![0xED, 0xB9])); // CPDR
+                machine.cpu.a = 0xFF;
+                machine.cpu.set_hl(0x1002);
+                machine.cpu.set_bc(3);
+                machine.ram[0x1002] = 0x01;
+                machine.ram[0x1001] = 0x02;
+                machine.ram[0x1000] = 0xFF;
+        
+                // 1st step
+                let cycles1 = machine.step();
+                assert_eq!(cycles1, 21);
+                assert_eq!(machine.cpu.get_bc(), 2);
+                assert_eq!(machine.cpu.get_hl(), 0x1001);
+                assert_eq!(machine.cpu.pc, 0); // still on CPDR
+        
+                // 2nd step
+                let cycles2 = machine.step();
+                assert_eq!(cycles2, 21);
+                assert_eq!(machine.cpu.get_bc(), 1);
+                assert_eq!(machine.cpu.get_hl(), 0x1000);
+                assert_eq!(machine.cpu.pc, 0); // still on CPDR
+        
+                // 3rd step (match found)
+                let cycles3 = machine.step();
+                assert_eq!(cycles3, 16);
+                assert_eq!(machine.cpu.get_bc(), 0);
+                assert_eq!(machine.cpu.get_hl(), 0x0FFF);
+                assert_eq!(machine.cpu.f & F_Z, F_Z);
+                assert_eq!(machine.cpu.pc, 2); // finished
+            }
+        }    
