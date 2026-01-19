@@ -149,6 +149,10 @@ impl Memory for Memory48k {
         if addr >= 0x4000 {
             self.ram[(addr - 0x4000) as usize] = val;
         }
+        else {
+            // TODO: remove after testing
+            self.rom[addr as usize] = val; // Allow writing to ROM for testing purposes
+        }
     }
 }
 
@@ -288,15 +292,28 @@ impl MachineZxSpectrum48 {
 
     pub fn load_rom(&mut self) {
         let mut loaded = false;
-        let rom_name = "48.rom";
+        // let rom_name = "48.rom";
+        let rom_name = "roms/zexall-0x0100.rom";
+        let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
             // Check if it looks like a valid ROM (exact size for 48K ROM)
-            if rom.len() == 16384 {
-                    self.memory.rom[..16384].copy_from_slice(&rom);
-                    loaded = true;
-            } else {
-                println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
-            }
+            //if rom.len() == 16384 {
+            self.memory.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
+            loaded = true;
+            // } else {
+            //     println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
+            // }
+            println!("Loaded ROM from {}", rom_name);
+
+            // Patch address 5 to add RET instruction to avoid hanging
+            self.memory.rom[5] = 0xC9; // RET
+            self.memory.rom[0x38] = 0xC9; // RET
+            self.cpu.pc = 0x100;
+            self.cpu.sp = 0xF000;
+            self.cpu.iff1 = false;
+            self.cpu.iff2 = false;
+            self.cpu.halted = false;
+            self.cpu.int_requested = false;
         }
         if !loaded {
             println!("Loading built-in test program...");
