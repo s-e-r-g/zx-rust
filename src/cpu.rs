@@ -269,7 +269,7 @@ impl Z80 {
         self.set_flag_s((r & 0x80) != 0);
         self.set_flag_z(r == 0);
         self.set_flag_y((r & F_Y) != 0);
-        self.set_flag_h((r & 0x0F) == 0);
+        self.set_flag_h((r & 0x0F) == 0x00); // half-carry if lower 4bits changed from 0x0F to 0x00
         self.set_flag_x((r & F_X) != 0);
         self.set_flag_pv(r == 0x80);
         self.set_flag_n(false);
@@ -280,7 +280,7 @@ impl Z80 {
         self.set_flag_s((r & 0x80) != 0);
         self.set_flag_z(r == 0);
         self.set_flag_y((r & F_Y) != 0);
-        self.set_flag_h((r & 0x0F) == 0x0F);
+        self.set_flag_h((r & 0x0F) == 0x0F); // half-carry if lower 4bits changed from 0x00 to 0x0F
         self.set_flag_x((r & F_X) != 0);
         self.set_flag_pv(r == 0x7F);
         self.set_flag_n(true);
