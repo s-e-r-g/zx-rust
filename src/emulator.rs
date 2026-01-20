@@ -164,8 +164,7 @@ pub struct MachineZxSpectrum48 {
     frame_ready: bool,
     pub screen_buffer: Vec<u8>,
     keyboard: [u8; 8],
-    enable_disassembler: bool,
-    enable_trace_interrupts: bool,
+    debugger: crate::debugger::Debugger,
 }
 
 
@@ -284,8 +283,7 @@ impl MachineZxSpectrum48 {
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             keyboard: [0xFF; 8],
-            enable_disassembler: enable_disassembler,
-            enable_trace_interrupts: enable_trace_interrupts,
+            debugger: crate::debugger::Debugger::new(enable_disassembler, enable_trace_interrupts, run_zexall),
         };
         machine.load_rom(&rom_filename, run_zexall);
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
@@ -456,8 +454,7 @@ impl MachineZxSpectrum48 {
 
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
 
-                self.cpu.step(bus, self.enable_disassembler, self.enable_trace_interrupts)
-
+                self.cpu.step(bus, &mut self.debugger)
             };
             for _ in 0..t_states {
                 self.ula.tick(&self.memory);

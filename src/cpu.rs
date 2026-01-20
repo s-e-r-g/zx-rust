@@ -8,7 +8,7 @@ use core::panic;
 use std::io::{self, Write};
 
 use crate::emulator::{Bus, Memory};
-use crate::disassembler::Disassembler;
+use crate::debugger::Debugger;
 
 // Z80 CPU Flag register bits
 const F_S: u8 = 0x80;   // Sign flag
@@ -69,8 +69,6 @@ pub struct Z80 {
     pub int_requested: bool,
     pub halted: bool,
     pub ei_pending: bool,
-
-    disassembler: Disassembler,
 }
 
 impl Z80 {
@@ -94,7 +92,6 @@ impl Z80 {
             int_requested: false,
             halted: false,
             ei_pending: false,
-            disassembler: Disassembler::new(),
         }
     }
 
@@ -396,40 +393,37 @@ impl Z80 {
         self.set_all_flags(s, z, y, h, x, pv, n, c);
     }
 
-    pub fn step(&mut self, bus: &mut dyn Bus, enable_trace_disassembler: bool, enable_trace_interrupts: bool) -> u32 {
+    pub fn step(&mut self, bus: &mut dyn Bus, debugger: &mut Debugger) -> u32 {
 
         let current_pc = self.pc;
 
-        if enable_trace_disassembler {
-            self.disassembler.trace_instruction(bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.ix, self.iy, self.i, self.r);
+        if debugger.enable_disassembler {
+            debugger.trace_instruction(bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.ix, self.iy, self.i, self.r);
         }
 
-        // debug zexall
-        if current_pc == 0x0005 {
-            if self.c == 2 {
-                print!("{}", self.e as char);
-                io::stdout().flush().unwrap();
-            }
-            else if self.c == 9 {
-                // print string until '$'
-                let mut addr = (self.d as u16) << 8 | self.e as u16;
-                loop {
-                    let ch = bus.read_byte(addr);
-                    if ch == b'$' {
-                        break;
-                    }
-                    print!("{}", ch as char);
+        if debugger.enable_zexall_test {
+            if current_pc == 0x0005 {
+                if self.c == 2 {
+                    print!("{}", self.e as char);
                     io::stdout().flush().unwrap();
-                    // flush stdout
-                    //std::io::stdout;
-                    addr = addr.wrapping_add(1);
+                }
+                else if self.c == 9 {
+                    // print string until '$'
+                    let mut addr = (self.d as u16) << 8 | self.e as u16;
+                    loop {
+                        let ch = bus.read_byte(addr);
+                        if ch == b'$' {
+                            break;
+                        }
+                        print!("{}", ch as char);
+                        io::stdout().flush().unwrap();
+                        // flush stdout
+                        //std::io::stdout;
+                        addr = addr.wrapping_add(1);
+                    }
                 }
             }
         }
-        else if current_pc == 0x0000 {
-            // program end
-            panic!("Program ended");
-        } 
 
         if self.halted {
             if self.int_requested {
@@ -440,7 +434,7 @@ impl Z80 {
         }
 
         if self.int_requested {
-            if enable_trace_interrupts {
+            if debugger.enable_trace_interrupts {
                 let im_mode = match self.im {
                     InterruptMode::IM0 => "IM0",
                     InterruptMode::IM1 => "IM1",
@@ -452,18 +446,19 @@ impl Z80 {
                     self.a, self.f, self.get_bc(), self.get_de(), self.get_hl(), self.sp, self.ix, self.iy);
             }
             self.int_requested = false;
+
             // Handle interrupt
             self.push(bus, self.pc);
             match self.im {
                 InterruptMode::IM0 => {
-                    if enable_trace_interrupts {
+                    if debugger.enable_trace_interrupts {
                         println!("INTERRUPT: Handling IM0 - Jumping to 0x0038");
                     }
                     self.pc = 0x0038;
                     return 13; // T-states for interrupt handling
                 }
                 InterruptMode::IM1 => {
-                    if enable_trace_interrupts {
+                    if debugger.enable_trace_interrupts {
                         println!("INTERRUPT: Handling IM1 - Jumping to 0x0038");
                     }
                     self.pc = 0x0038;
@@ -473,9 +468,11 @@ impl Z80 {
                     let data_on_the_bus: u8= 0xFF; // TODO: Assume data bus returns 0xFF and spec is correct
                     let addr = (self.i as u16) << 8 | (data_on_the_bus & 0xFE) as u16 ; // LSB is ignored
                     let vector_addr = bus.read_byte(addr) as u16 + ((bus.read_byte(addr.wrapping_add(1)) as u16) << 8);
-                    if enable_trace_interrupts {
+
+                    if debugger.enable_trace_interrupts {
                         println!("INTERRUPT: Handling IM2 - Vector table at {:04X}, jumping to {:04X}", addr, vector_addr);
                     }
+
                     self.pc = vector_addr;
                     return 19; // T-states for interrupt handling
                 }
