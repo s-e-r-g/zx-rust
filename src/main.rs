@@ -24,6 +24,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
         println!("  --max-speed       Disable frame rate limiting for maximum speed");
         println!("  --show-fps        Display current FPS in the top-left corner");
+        println!("  --no-ui           Run in headless mode for maximum performance (e.g., for tests)");
         println!("  --help, -h        Show this help message");
         println!();
         println!("Examples:");
@@ -42,6 +43,7 @@ fn main() -> Result<(), eframe::Error> {
     let run_zexall = args.contains(&"--run-zexall".to_string());
     let max_speed = args.contains(&"--max-speed".to_string());
     let show_fps = args.contains(&"--show-fps".to_string());
+    let no_ui = args.contains(&"--no-ui".to_string());
     
     // Parse ROM filename
     let mut rom_filename = "roms/48.rom".to_string();
@@ -51,12 +53,19 @@ fn main() -> Result<(), eframe::Error> {
         }
     }
 
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "ZX Spectrum Emulator",
-        options,
-        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall, max_speed, show_fps))),
-    )
+    if no_ui {
+        let mut emulator = MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall);
+        loop {
+            emulator.run_until_frame();
+        }
+    } else {
+        let options = eframe::NativeOptions::default();
+        eframe::run_native(
+            "ZX Spectrum Emulator",
+            options,
+            Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall, max_speed, show_fps))),
+        )
+    }
 }
 
 struct MyApp {
