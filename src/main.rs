@@ -6,6 +6,7 @@ mod screen;
 use eframe::egui::{self, CentralPanel};
 use emulator::{MachineZxSpectrum48, Key};
 use screen::draw_screen;
+use std::collections::VecDeque;
 
 fn main() -> Result<(), eframe::Error> {
     // Parse command line arguments
@@ -21,6 +22,8 @@ fn main() -> Result<(), eframe::Error> {
         println!("  --trace-int       Enable interrupt tracing");
         println!("  --rom=<file>      Load specified ROM file (default: roms/48.rom)");
         println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
+        println!("  --max-speed       Disable frame rate limiting for maximum speed");
+        println!("  --show-fps        Display current FPS in the top-left corner");
         println!("  --help, -h        Show this help message");
         println!();
         println!("Examples:");
@@ -29,12 +32,16 @@ fn main() -> Result<(), eframe::Error> {
         println!("  {} --trace-int    Run with interrupt tracing", args[0]);
         println!("  {} --rom=roms/Robik48.rom  Load alternative ROM", args[0]);
         println!("  {} --run-zexall   Run ZEXALL test", args[0]);
+        println!("  {} --max-speed    Run at maximum speed", args[0]);
+        println!("  {} --show-fps     Show FPS counter", args[0]);
         std::process::exit(0);
     }
     
     let enable_disassembler = args.contains(&"--disasm".to_string());
     let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
     let run_zexall = args.contains(&"--run-zexall".to_string());
+    let max_speed = args.contains(&"--max-speed".to_string());
+    let show_fps = args.contains(&"--show-fps".to_string());
     
     // Parse ROM filename
     let mut rom_filename = "roms/48.rom".to_string();
@@ -48,13 +55,16 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "ZX Spectrum Emulator",
         options,
-        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall))),
+        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall, max_speed, show_fps))),
     )
 }
 
 struct MyApp {
     emulator: MachineZxSpectrum48,
     last_frame_generation_start_time: std::time::Instant,
+    max_speed: bool,
+    show_fps: bool,
+    frame_times: std::collections::VecDeque<std::time::Instant>,
 }
 
 impl MyApp {
@@ -82,17 +92,20 @@ impl MyApp {
 }
 
 impl MyApp {
-    fn new(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
+    fn new(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool, max_speed: bool, show_fps: bool) -> Self {
         Self {
             emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall),
             last_frame_generation_start_time: std::time::Instant::now(),
+            max_speed,
+            show_fps,
+            frame_times: VecDeque::new(),
         }
     }
 }
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false, false, "roms/48.rom".to_string(), false)
+        Self::new(false, false, "roms/48.rom".to_string(), false, false, false)
     }
 }
 
@@ -100,7 +113,7 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
         let now = std::time::Instant::now();
-        if now.duration_since(self.last_frame_generation_start_time).as_millis() >= 20 { // ~50Hz (20ms)
+        if self.max_speed || now.duration_since(self.last_frame_generation_start_time).as_millis() >= 20 { // ~50Hz (20ms)
             self.last_frame_generation_start_time = now;
             self.emulator.run_until_frame();
         }
@@ -108,6 +121,22 @@ impl eframe::App for MyApp {
         CentralPanel::default().show(ctx, |ui| {
             draw_screen(ui, &self.emulator.screen_buffer, emulator::FULL_WIDTH, emulator::FULL_HEIGHT);
         });
+
+        if self.show_fps {
+            self.frame_times.push_back(now);
+            // Keep only frame times within the last second
+            let one_second_ago = now - std::time::Duration::from_secs(1);
+            while self.frame_times.front().map_or(false, |&t| t < one_second_ago) {
+                self.frame_times.pop_front();
+            }
+            let fps = self.frame_times.len();
+
+            egui::Area::new("fps_display".into())
+                .fixed_pos(egui::pos2(10.0, 10.0))
+                .show(ctx, |ui| {
+                    ui.label(egui::RichText::new(format!("FPS: {}", fps)).color(egui::Color32::WHITE));
+                });
+        }
         ctx.request_repaint();
     }
 }
