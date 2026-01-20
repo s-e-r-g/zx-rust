@@ -1,4 +1,5 @@
 mod cpu;
+mod disassembler;
 mod emulator;
 mod screen;
 
@@ -7,11 +8,15 @@ use emulator::{MachineZxSpectrum48, Key};
 use screen::draw_screen;
 
 fn main() -> Result<(), eframe::Error> {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let enable_disassembler = args.contains(&"--disasm".to_string());
+
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "ZX Spectrum Emulator",
         options,
-        Box::new(|_cc| Box::new(MyApp::default())),
+        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler))),
     )
 }
 
@@ -44,16 +49,18 @@ impl MyApp {
     }
 }
 
-impl Default for MyApp {
-    fn default() -> Self {
-        // let mut emu = Emulator::new();
-        // if let Err(e) = emu.load_tap("test.tap") {
-        //     println!("Error loading tap file: {}", e);
-        // }
+impl MyApp {
+    fn new(enable_disassembler: bool) -> Self {
         Self {
-            emulator: MachineZxSpectrum48::new(),
+            emulator: MachineZxSpectrum48::new_with_disassembler(enable_disassembler),
             last_frame_generation_start_time: std::time::Instant::now(),
         }
+    }
+}
+
+impl Default for MyApp {
+    fn default() -> Self {
+        Self::new(false)
     }
 }
 
