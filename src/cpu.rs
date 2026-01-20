@@ -3317,17 +3317,41 @@ impl Z80 {
             }
             0x54 => { // LD D, IXH (undocumented)
                 self.d = (self.ix >> 8) as u8;
+                // flags unchanged
                 8
             }
             0x55 => { // LD D, IXL (undocumented)
                 self.d = self.ix as u8;
+                // flags unchanged
                 8
             }
             0x56 => { // LD D, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.d = bus.read_byte(addr);
+                // flags unchanged
                 19
+            }
+            0x57 => { // LD D, A (undocumented)
+                self.d = self.a;
+                // flags unchanged
+                8
+            }
+            0x58 => { // LD E, B (undocumented)
+                self.e = self.b;
+                8
+            }
+            0x59 => { // LD E, C (undocumented)
+                self.e = self.c;
+                8
+            }
+            0x5A => { // LD E, D (undocumented)
+                self.e = self.d;
+                8
+            }
+            0x5B => { // LD E, E (undocumented)
+                // flags unchanged
+                8
             }
             0x5C => { // LD E, IXH (undocumented)
                 self.e = (self.ix >> 8) as u8;
@@ -3753,7 +3777,7 @@ impl Z80 {
                 23
             }
             _ => {
-                println!("Unimplemented DDCB opcode: {:02X}", opcode);
+                panic!("Unimplemented DDCB opcode: {:02X}", opcode);
                 8
             }
         }
@@ -3936,6 +3960,30 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 self.c = bus.read_byte(addr);
                 19
+            }
+            0x4F => { // LD C, A (undocumented)
+                self.c = self.a;
+                // flags unchanged
+                8
+            }
+            0x50 => { // LD D, B (undocumented)
+                self.d = self.b;
+                // flags unchanged
+                8
+            }
+            0x51 => { // LD D, C (undocumented)
+                self.d = self.c;
+                // flags unchanged
+                8
+            }
+            0x52 => { // LD D, D (undocumented)
+                // flags unchanged
+                8
+            }
+            0x53 => { // LD D, E (undocumented)
+                self.d = self.e;
+                // flags unchanged
+                8
             }
             0x54 => { // LD D, IYH (undocumented)
                 self.d = (self.iy >> 8) as u8;
@@ -4295,8 +4343,7 @@ impl Z80 {
                 10
             }
             _ => {
-                println!("Unimplemented FD opcode: {:02X}", opcode);
-                8
+                panic!("Unimplemented FD opcode: {:02X}", opcode);
             }
         }
     }
