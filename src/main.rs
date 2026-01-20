@@ -134,7 +134,12 @@ impl eframe::App for MyApp {
             egui::Area::new("fps_display".into())
                 .fixed_pos(egui::pos2(10.0, 10.0))
                 .show(ctx, |ui| {
-                    ui.label(egui::RichText::new(format!("FPS: {}", fps)).color(egui::Color32::WHITE));
+                    egui::Frame::default()
+                        .fill(egui::Color32::BLACK)
+                        .inner_margin(egui::Margin::symmetric(5.0, 2.0))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(format!("FPS: {}", fps)).color(egui::Color32::WHITE));
+                        });
                 });
         }
         ctx.request_repaint();
