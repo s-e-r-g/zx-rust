@@ -3217,19 +3217,65 @@ impl Z80 {
                 self.ix = result;
                 15
             }
+            0x40 => { // LD B, B (undocumented)
+                // flags unchanged
+                8
+            }
+            0x41 => { // LD B, C (undocumented)
+                self.b = self.c;
+                // flags unchanged
+                8
+            }
+            0x42 => { // LD B, D (undocumented)
+                self.b = self.d;
+                // flags unchanged
+                8
+            }
+            0x43 => { // LD B, E (undocumented)
+                self.b = self.e;
+                // flags unchanged
+                8
+            }
             0x44 => { // LD B, IXH (undocumented)
                 self.b = (self.ix >> 8) as u8;
+                // flags unchanged
                 8
             }
             0x45 => { // LD B, IXL (undocumented)
                 self.b = self.ix as u8;
+                // flags unchanged
                 8
             }
             0x46 => { // LD B, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.b = bus.read_byte(addr);
+                // flags unchanged
                 19
+            }
+            0x47 => { // LD B, A (undocumented)
+                self.b = self.a;
+                // flags unchanged
+                8
+            }
+            0x48 => { // LD C, B (undocumented)
+                self.c = self.b;
+                // flags unchanged
+                8
+            }
+            0x49 => { // LD C, C (undocumented)
+                // flags unchanged
+                8
+            }
+            0x4A => { // LD C, D (undocumented)
+                self.c = self.d;
+                // flags unchanged
+                8
+            }
+            0x4B => { // LD C, E (undocumented)
+                self.c = self.e;
+                // flags unchanged
+                8
             }
             0x4C => { // LD C, IXH (undocumented)
                 self.c = (self.ix >> 8) as u8;
@@ -3244,6 +3290,30 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 self.c = bus.read_byte(addr);
                 19
+            }
+            0x4F => { // LD C, A (undocumented)
+                self.c = self.a;
+                // flags unchanged
+                8
+            }
+            0x50 => { // LD D, B (undocumented)
+                self.d = self.b;
+                // flags unchanged
+                8
+            }
+            0x51 => { // LD D, C (undocumented)
+                self.d = self.c;
+                // flags unchanged
+                8
+            }
+            0x52 => { // LD D, D (undocumented)
+                // flags unchanged
+                8
+            }
+            0x53 => { // LD D, E (undocumented)
+                self.d = self.e;
+                // flags unchanged
+                8
             }
             0x54 => { // LD D, IXH (undocumented)
                 self.d = (self.ix >> 8) as u8;
@@ -3796,6 +3866,25 @@ impl Z80 {
                 self.iy = result;
                 15
             }
+            0x40 => { // LD B, B (undocumented)
+                // flags unchanged
+                8
+            }
+            0x41 => { // LD B, C (undocumented)
+                self.b = self.c;
+                // flags unchanged
+                8
+            }
+            0x42 => { // LD B, D (undocumented)
+                self.b = self.d;
+                // flags unchanged
+                8
+            }
+            0x43 => { // LD B, E (undocumented)
+                self.b = self.e;
+                // flags unchanged
+                8
+            }
             0x44 => { // LD B, IYH (undocumented)
                 self.b = (self.iy >> 8) as u8;
                 8
@@ -3809,6 +3898,30 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 self.b = bus.read_byte(addr);
                 19
+            }
+            0x47 => { // LD B, A (undocumented)
+                self.b = self.a;
+                // flags unchanged
+                8
+            }
+            0x48 => { // LD C, B (undocumented)
+                self.c = self.b;
+                // flags unchanged
+                8
+            }
+            0x49 => { // LD C, C (undocumented)
+                // flags unchanged
+                8
+            }
+            0x4A => { // LD C, D (undocumented)
+                self.c = self.d;
+                // flags unchanged
+                8
+            }
+            0x4B => { // LD C, E (undocumented)
+                self.c = self.e;
+                // flags unchanged
+                8
             }
             0x4C => { // LD C, IYH (undocumented)
                 self.c = (self.iy >> 8) as u8;
