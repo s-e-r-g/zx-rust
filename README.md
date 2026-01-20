@@ -9,7 +9,7 @@ TODO:
 
 Testing CPU status (ZEXALL):
 ============================
-<pre>
+```
 Loaded ZEXALL test ROM from roms/zexall-0x0100.rom
 Z80 instruction exerciser
 <adc,sbc> hl,<bc,de,hl,sp>....  ERROR **** crc expected:d48ad519 found:f39089a0
@@ -65,4 +65,4 @@ ld <bcdehla>,<bcdehla>........  OK
 ld <bcdexya>,<bcdexya>........
 thread 'main' panicked at src\cpu.rs:3606:17:
 Unimplemented DD opcode: 40
-</pre>
+```
