@@ -109,7 +109,7 @@ impl Disassembler {
     pub fn disassemble_instruction(&self, bus: &dyn Bus, pc: u16) -> (String, u16) {
         let opcode = bus.read_byte(pc);
         let mut instruction_len = 1;
-        let mut mnemonic = String::new();
+        let mnemonic;
 
         match opcode {
             // 8-bit loads

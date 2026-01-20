@@ -272,14 +272,6 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    pub fn new() -> Self {
-        Self::new_with_options(false, false, "roms/48.rom".to_string(), false)
-    }
-
-    pub fn new_with_disassembler(enable_disassembler: bool) -> Self {
-        Self::new_with_options(enable_disassembler, false, "roms/48.rom".to_string(), false)
-    }
-
     pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
