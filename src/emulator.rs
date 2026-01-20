@@ -129,13 +129,19 @@ impl Ula {
     }
 }
 
-pub struct Memory48k
-{
+pub struct MachineZxSpectrum48 {
+    ula: Ula,
     ram: [u8; 0xC000], // 48KB RAM
     rom: [u8; 0x4000], // 16KB ROM
+    cpu: crate::cpu::Z80,
+    t_states: u32,
+    frame_ready: bool,
+    pub screen_buffer: Vec<u8>,
+    keyboard: [u8; 8],
+    debugger: crate::debugger::Debugger,
 }
 
-impl Memory for Memory48k {
+impl Memory for MachineZxSpectrum48 {
     fn read_byte(&self, addr: u16) -> u8 {
         if addr < 0x4000 {
             self.rom[addr as usize]
@@ -155,18 +161,6 @@ impl Memory for Memory48k {
         }
     }
 }
-
-pub struct MachineZxSpectrum48 {
-    ula: Ula,
-    memory: Memory48k,
-    cpu: crate::cpu::Z80,
-    t_states: u32,
-    frame_ready: bool,
-    pub screen_buffer: Vec<u8>,
-    keyboard: [u8; 8],
-    debugger: crate::debugger::Debugger,
-}
-
 
 impl Ports for MachineZxSpectrum48 {
     fn read_port(&self, port: u16) -> u8 {
@@ -198,18 +192,7 @@ impl Ports for MachineZxSpectrum48 {
     }
 }
 
-
-impl Memory for MachineZxSpectrum48 {
-    fn read_byte(&self, addr: u16) -> u8 {
-        self.memory.read_byte(addr)
-    }
-    fn write_byte(&mut self, addr: u16, val: u8) {
-        self.memory.write_byte(addr, val)
-    }
-}
-
 impl Bus for MachineZxSpectrum48 {}
-
 
 impl MachineZxSpectrum48 {
     pub fn set_key_state(&mut self, key: Key, pressed: bool) {
@@ -274,10 +257,8 @@ impl MachineZxSpectrum48 {
     pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
-            memory: Memory48k {
-                ram: [0; 0xC000],
-                rom: [0; 0x4000],
-            },
+            ram: [0; 0xC000],
+            rom: [0; 0x4000],
             cpu: crate::cpu::Z80::new(),
             t_states: 0,
             frame_ready: false,
@@ -303,7 +284,7 @@ impl MachineZxSpectrum48 {
     fn load_standard_rom(&mut self, rom_filename: &str) {
         if let Ok(rom) = std::fs::read(rom_filename) {
             if rom.len() == 0x4000 {
-                self.memory.rom.copy_from_slice(&rom);
+                self.rom.copy_from_slice(&rom);
                 println!("Loaded ROM from {}", rom_filename);
             } else {
                 println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_filename, rom.len());
@@ -318,14 +299,14 @@ impl MachineZxSpectrum48 {
     fn load_zexall_test(&mut self, rom_name: &str) {
         let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
-            self.memory.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
+            self.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
             println!("Loaded ZEXALL/ZEXCOM test ROM from {}", rom_name);
 
             // Patch address 5 to add RET instruction to avoid hanging
-            self.memory.rom[5] = 0xC9; // RET
-            self.memory.rom[0x38] = 0xFB; // EI
-            self.memory.rom[0x39] = 0xED; // RETI
-            self.memory.rom[0x3A] = 0x4D;
+            self.rom[5] = 0xC9; // RET
+            self.rom[0x38] = 0xFB; // EI
+            self.rom[0x39] = 0xED; // RETI
+            self.rom[0x3A] = 0x4D;
 
             self.cpu.pc = 0x100;
             self.cpu.sp = 0xF000;
@@ -352,7 +333,7 @@ impl MachineZxSpectrum48 {
             0xC3, 0x00, 0x00, // JP 0x0000
         ];
         for (i, &b) in code.iter().enumerate() {
-            self.memory.rom[i] = b;
+            self.rom[i] = b;
         }
     }
 

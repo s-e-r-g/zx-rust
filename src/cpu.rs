@@ -354,6 +354,47 @@ impl Z80 {
         result as u8
     }
 
+    fn adc16(&mut self, a: u16, b: u16) -> u16 {
+        let carry = (self.f & F_C) != 0;
+        let result = a as u32 + b as u32 + carry as u32;
+        // S is set if result is negative; otherwise, it is reset.
+        self.set_flag_s((result & 0x8000) != 0);
+        // Z is set if result is 0; otherwise, it is reset
+        self.set_flag_z((result & 0xFFFF) == 0);
+        // H is set if carry from bit 11; otherwise, it is reset.
+        self.set_flag_h(((a ^ b ^ result as u16) & 0x1000) != 0);
+        // P/V is set if overflow; otherwise, it is reset.
+        self.set_flag_pv(((a ^ result as u16) & (b ^ result as u16)) & 0x8000 != 0);
+        // N is reset
+        self.set_flag_n(false);
+        // C is set if carry from bit 15; otherwise, it is reset.
+        self.set_flag_c((result & 0x10000) != 0);
+        // XY from high byte of result
+        self.set_flags_xy_from_result(((result >> 8) & 0xFF) as u8);
+        result as u16
+    }
+
+    fn sbc16(&mut self, a: u16, b: u16) -> u16 {
+        let carry = (self.f & F_C) != 0;
+        let result = a as i32 - b as i32 - carry as i32;
+        // S is set if result is negative; otherwise, it is reset.
+        self.set_flag_s((result & 0x8000) != 0);
+        // Z is set if result is 0; otherwise, it is reset
+        self.set_flag_z((result & 0xFFFF) == 0);
+        // H is set if borrow from bit 12; otherwise, it is reset.
+        self.set_flag_h(((a ^ b ^ result as u16) & 0x1000) != 0);
+        // P/V is set if overflow; otherwise, it is reset.
+        self.set_flag_pv(((a ^ result as u16) & (b ^ result as u16)) & 0x8000 != 0);
+        // N is set.
+        self.set_flag_n(true);
+        // C is set if borrow; otherwise, it is reset.
+        self.set_flag_c(result < 0);
+        // XY from high byte of result
+        self.set_flags_xy_from_result(((result as u32 >> 8) & 0xFF) as u8);
+
+        result as u16
+    }
+
     fn set_flags_and(&mut self, result: u8) {
         self.set_all_flags(
             (result & 0x80) != 0, // S
@@ -2504,19 +2545,9 @@ impl Z80 {
                 12
             }
             0x42 => { // SBC HL, BC
-                let hl = self.get_hl() as u32;
-                let bc = self.get_bc() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_sub(bc).wrapping_sub(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = ((hl ^ bc) & (hl ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ bc ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.sbc16(self.get_hl(), self.get_bc());
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x43 => { // LD (nn), BC
@@ -2562,18 +2593,9 @@ impl Z80 {
                 12
             }
             0x4A => { // ADC HL, BC
-                let hl = self.get_hl() as u32;
-                let bc = self.get_bc() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_add(bc).wrapping_add(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = !((hl ^ bc) & 0x8000 != 0) && ((hl ^ result) & (bc ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ bc ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.adc16(self.get_hl(), self.get_bc());
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x4B => { // LD BC, (nn)
@@ -2603,19 +2625,9 @@ impl Z80 {
                 12
             }            
             0x52 => { // SBC HL, DE
-                let hl = self.get_hl() as u32;
-                let de = self.get_de() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_sub(de).wrapping_sub(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = ((hl ^ de) & (hl ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.sbc16(self.get_hl(), self.get_de());
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x53 => { // LD (nn), DE
@@ -2666,18 +2678,9 @@ impl Z80 {
                 12
             }
             0x5A => { // ADC HL, DE
-                let hl = self.get_hl() as u32;
-                let de = self.get_de() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_add(de).wrapping_add(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = !((hl ^ de) & 0x8000 != 0) && ((hl ^ result) & (de ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ de ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.adc16(self.get_hl(), self.get_de());
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x5B => { // LD DE, (nn)
@@ -2727,19 +2730,9 @@ impl Z80 {
                 12
             }
             0x62 => { // SBC HL, HL
-                let hl = self.get_hl() as u32;
-                let hl2 = self.get_hl() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_sub(hl2).wrapping_sub(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = ((hl ^ hl2) & (hl ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ hl2 ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.sbc16(self.get_hl(), self.get_hl());
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x63 => { // LD (nn), HL
@@ -2792,19 +2785,15 @@ impl Z80 {
                 12
             }
             0x6A => { // ADC HL, HL
-                let hl = self.get_hl() as u32;
-                let hl2 = self.get_hl() as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_add(hl2).wrapping_add(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = !((hl ^ hl2) & 0x8000 != 0) && ((hl ^ result) & (hl2 ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ hl2 ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.adc16(self.get_hl(), self.get_hl());
+                self.set_hl(hl);
+                // flags set above
                 15
+            }
+            0x6B => { // LD HL, (nn)
+                let nn = self.read_word_pc(bus);
+                self.set_hl(nn);
+                20
             }
             0x6F => { // RLD
                 let addr = self.get_hl();
@@ -2843,19 +2832,9 @@ impl Z80 {
                 12
             }
             0x72 => { // SBC HL, SP
-                let hl = self.get_hl() as u32;
-                let sp = self.sp as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_sub(sp).wrapping_sub(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = ((hl ^ sp) & (hl ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.sbc16(self.get_hl(), self.sp);
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x73 => { // LD (nn), SP
@@ -2885,18 +2864,9 @@ impl Z80 {
                 12
             }
             0x7A => { // ADC HL, SP
-                let hl = self.get_hl() as u32;
-                let sp = self.sp as u32;
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
-                let result = hl.wrapping_add(sp).wrapping_add(carry);
-                self.set_hl(result as u16);
-                let result_u16 = result as u16;
-                let overflow = !((hl ^ sp) & 0x8000 != 0) && ((hl ^ result) & (sp ^ result)) & 0x8000 != 0;
-                self.f = (if (result_u16 & 0x8000) != 0 { F_S } else { 0 }) |
-                         (if result_u16 == 0 { F_Z } else { 0 }) |
-                         (if overflow { F_PV } else { 0 }) |
-                         (if result > 0xFFFF { F_C } else { 0 }) |
-                         (if ((hl ^ sp ^ result) & 0x1000) != 0 { F_H } else { 0 });
+                let hl = self.adc16(self.get_hl(), self.sp);
+                self.set_hl(hl);
+                // flags set above
                 15
             }
             0x7B => { // LD SP, (nn)
