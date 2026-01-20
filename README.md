@@ -7,6 +7,7 @@ TODO:
 * add tests
 * check flags correctness
 
+
 Testing CPU status (ZEXALL):
 ============================
 ```
@@ -69,7 +70,9 @@ ldd<r> (2)....................  ERROR **** crc expected:39dd3de1 found:58232761
 ldi<r> (1)....................  ERROR **** crc expected:f782b0d1 found:980eaf00
 ldi<r> (2)....................  ERROR **** crc expected:e9ead0ae found:e798d5ff
 neg...........................  ERROR **** crc expected:d638dd6a found:f7dc0ecd
-<rrd,rld>.....................
-thread 'main' panicked at src\cpu.rs:2755:17:
-Unimplemented ED opcode: 0x67 RRD
+<rrd,rld>.....................  OK
+<rlca,rrca,rla,rra>...........  OK
+shf/rot (<ix,iy>+1)...........
+thread 'main' panicked at src\cpu.rs:3858:17:
+Unimplemented DDCB opcode: 36
 ```

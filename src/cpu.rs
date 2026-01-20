@@ -2752,7 +2752,30 @@ impl Z80 {
                 panic!("Unimplemented ED opcode: 0x66 IM 0");
             }
             0x67 => { // RRD
-                panic!("Unimplemented ED opcode: 0x67 RRD");
+                let addr = self.get_hl();
+                let mem_val = bus.read_byte(addr);
+                let acc_val = self.a;
+
+                let mem_low = mem_val & 0x0F;
+                let mem_high = mem_val & 0xF0;
+                let acc_low = acc_val & 0x0F;
+
+                // New (HL) value
+                let new_mem_val = (acc_low << 4) | (mem_high >> 4);
+                bus.write_byte(addr, new_mem_val);
+
+                // New A value
+                self.a = (acc_val & 0xF0) | mem_low;
+
+                // Set flags
+                self.set_flag_s((self.a & 0x80) != 0);
+                self.set_flag_z(self.a == 0);
+                self.set_flag_h(false);
+                self.set_flags_xy_from_result(self.a);
+                self.set_flag_pv(Z80::parity(self.a));
+                self.set_flag_n(false);
+                // C is not affected
+                18
             }
             0x68 => { // IN L, (C)
                 let port = self.get_bc();
@@ -2779,6 +2802,32 @@ impl Z80 {
                          (if result > 0xFFFF { F_C } else { 0 }) |
                          (if ((hl ^ hl2 ^ result) & 0x1000) != 0 { F_H } else { 0 });
                 15
+            }
+            0x6F => { // RLD
+                let addr = self.get_hl();
+                let mem_val = bus.read_byte(addr);
+                let acc_val = self.a;
+
+                let mem_low = mem_val & 0x0F;
+                let mem_high = mem_val >> 4;
+                let acc_low = acc_val & 0x0F;
+
+                // New (HL) value
+                let new_mem_val = (mem_low << 4) | acc_low;
+                bus.write_byte(addr, new_mem_val);
+
+                // New A value
+                self.a = (acc_val & 0xF0) | mem_high;
+
+                // Set flags
+                self.set_flag_s((self.a & 0x80) != 0);
+                self.set_flag_z(self.a == 0);
+                self.set_flag_h(false);
+                self.set_flags_xy_from_result(self.a);
+                self.set_flag_pv(Z80::parity(self.a));
+                self.set_flag_n(false);
+                // C is not affected
+                18
             }
             0x70 => { // IN 0, (C) (undocumented)
                 let port = self.get_bc();
