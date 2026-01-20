@@ -10,13 +10,33 @@ use screen::draw_screen;
 fn main() -> Result<(), eframe::Error> {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
+    
+    // Check for help flag
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        println!("ZX Spectrum Emulator");
+        println!("Usage: {} [OPTIONS]", args[0]);
+        println!();
+        println!("Options:");
+        println!("  --disasm          Enable instruction disassembly tracing");
+        println!("  --trace-int       Enable interrupt tracing");
+        println!("  --help, -h        Show this help message");
+        println!();
+        println!("Examples:");
+        println!("  {}                Run emulator normally", args[0]);
+        println!("  {} --disasm       Run with disassembly tracing", args[0]);
+        println!("  {} --trace-int    Run with interrupt tracing", args[0]);
+        println!("  {} --disasm --trace-int  Run with both tracing options", args[0]);
+        std::process::exit(0);
+    }
+    
     let enable_disassembler = args.contains(&"--disasm".to_string());
+    let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
 
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "ZX Spectrum Emulator",
         options,
-        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler))),
+        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts))),
     )
 }
 
@@ -50,9 +70,9 @@ impl MyApp {
 }
 
 impl MyApp {
-    fn new(enable_disassembler: bool) -> Self {
+    fn new(enable_disassembler: bool, enable_trace_interrupts: bool) -> Self {
         Self {
-            emulator: MachineZxSpectrum48::new_with_disassembler(enable_disassembler),
+            emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts),
             last_frame_generation_start_time: std::time::Instant::now(),
         }
     }
@@ -60,7 +80,7 @@ impl MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false)
+        Self::new(false, false)
     }
 }
 

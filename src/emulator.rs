@@ -165,6 +165,7 @@ pub struct MachineZxSpectrum48 {
     pub screen_buffer: Vec<u8>,
     keyboard: [u8; 8],
     enable_disassembler: bool,
+    enable_trace_interrupts: bool,
 }
 
 
@@ -272,10 +273,14 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn new() -> Self {
-        Self::new_with_disassembler(false)
+        Self::new_with_options(false, false)
     }
 
     pub fn new_with_disassembler(enable_disassembler: bool) -> Self {
+        Self::new_with_options(enable_disassembler, false)
+    }
+
+    pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
             memory: Memory48k {
@@ -288,6 +293,7 @@ impl MachineZxSpectrum48 {
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             keyboard: [0xFF; 8],
             enable_disassembler: enable_disassembler,
+            enable_trace_interrupts: enable_trace_interrupts,
         };
         machine.load_rom();
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
@@ -439,7 +445,7 @@ impl MachineZxSpectrum48 {
 
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
 
-                self.cpu.step(bus, self.enable_disassembler)
+                self.cpu.step(bus, self.enable_disassembler, self.enable_trace_interrupts)
 
             };
             for _ in 0..t_states {
