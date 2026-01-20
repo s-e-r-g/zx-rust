@@ -65,6 +65,9 @@ struct MyApp {
     max_speed: bool,
     show_fps: bool,
     frame_times: std::collections::VecDeque<std::time::Instant>,
+    emulated_frames_this_second: u32,
+    last_emulated_fps_calc: std::time::Instant,
+    emulated_fps: u32,
 }
 
 impl MyApp {
@@ -93,12 +96,16 @@ impl MyApp {
 
 impl MyApp {
     fn new(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool, max_speed: bool, show_fps: bool) -> Self {
+        let now = std::time::Instant::now();
         Self {
             emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall),
-            last_frame_generation_start_time: std::time::Instant::now(),
+            last_frame_generation_start_time: now,
             max_speed,
             show_fps,
             frame_times: VecDeque::new(),
+            emulated_frames_this_second: 0,
+            last_emulated_fps_calc: now,
+            emulated_fps: 0,
         }
     }
 }
@@ -113,9 +120,22 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
         let now = std::time::Instant::now();
-        if self.max_speed || now.duration_since(self.last_frame_generation_start_time).as_millis() >= 20 { // ~50Hz (20ms)
+        let time_since_last = now.duration_since(self.last_frame_generation_start_time);
+        if self.max_speed {
+            self.last_frame_generation_start_time = now;
+            // Number of frames to run, to run at 2x speed
+            let mut frames_to_run = (time_since_last.as_secs_f64() * 50.0 * 2.0).ceil() as u32;
+            if frames_to_run == 0 {
+                frames_to_run = 1;
+            }
+            for _ in 0..frames_to_run {
+                self.emulator.run_until_frame();
+                self.emulated_frames_this_second += 1;
+            }
+        } else if time_since_last.as_millis() >= 20 { // ~50Hz (20ms)
             self.last_frame_generation_start_time = now;
             self.emulator.run_until_frame();
+            self.emulated_frames_this_second += 1;
         }
 
         CentralPanel::default().show(ctx, |ui| {
@@ -131,6 +151,12 @@ impl eframe::App for MyApp {
             }
             let fps = self.frame_times.len();
 
+            if now.duration_since(self.last_emulated_fps_calc).as_secs() >= 1 {
+                self.emulated_fps = self.emulated_frames_this_second;
+                self.emulated_frames_this_second = 0;
+                self.last_emulated_fps_calc = now;
+            }
+
             egui::Area::new("fps_display".into())
                 .fixed_pos(egui::pos2(10.0, 10.0))
                 .show(ctx, |ui| {
@@ -139,6 +165,7 @@ impl eframe::App for MyApp {
                         .inner_margin(egui::Margin::symmetric(5.0, 2.0))
                         .show(ui, |ui| {
                             ui.label(egui::RichText::new(format!("FPS: {}", fps)).color(egui::Color32::WHITE));
+                            ui.label(egui::RichText::new(format!("Emulated FPS: {}", self.emulated_fps)).color(egui::Color32::WHITE));
                         });
                 });
         }
