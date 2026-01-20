@@ -4279,6 +4279,7 @@ mod tests {
         cpu: Z80,
         ram: [u8; 0x10000],
         ports: HashMap<u16, u8>,
+        debugger: Debugger,
     }
 
     impl Ports for TestMachine {
@@ -4307,6 +4308,7 @@ mod tests {
                 cpu: Z80::new(),
                 ram: [0; 0x10000],
                 ports: HashMap::new(),
+                debugger: Debugger::new(false, false, false),
             };
             if let Some(commands) = initial_commands {
                 for (i, &cmd) in commands.iter().enumerate() {
@@ -4319,7 +4321,7 @@ mod tests {
         fn step(&mut self) -> u32 {
             let bus_ptr = self as *mut TestMachine;
             let bus = unsafe { &mut *bus_ptr };
-            self.cpu.step(bus, false, false)
+            self.cpu.step(bus, &mut self.debugger)
         }
     }
 
