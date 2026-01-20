@@ -1,5 +1,5 @@
 mod cpu;
-mod disassembler;
+mod debugger;
 mod emulator;
 mod screen;
 

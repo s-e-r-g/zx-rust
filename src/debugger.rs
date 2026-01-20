@@ -1,14 +1,22 @@
-//! Z80 Disassembler
+//! Z80 Debugging and Disassembly Module
 //!
 //! This module provides disassembly functionality for Z80 instructions.
 
 use crate::emulator::{Bus};
 
-pub struct Disassembler;
+pub struct Debugger {
+    pub enable_disassembler: bool,
+    pub enable_trace_interrupts: bool,
+    pub enable_zexall_test: bool,
+}
 
-impl Disassembler {
-    pub fn new() -> Self {
-        Disassembler
+impl Debugger {
+    pub fn new(enable_disassembler: bool, enable_trace_interrupts: bool, enable_zexall_test: bool) -> Self {
+        Self {
+            enable_disassembler,
+            enable_trace_interrupts,
+            enable_zexall_test,
+        }
     }
 
     // Helper for CB-prefixed instructions
