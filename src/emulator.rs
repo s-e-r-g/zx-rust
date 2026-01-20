@@ -293,8 +293,8 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn load_rom(&mut self, rom_filename: &str, run_zexall: bool) {
-        if run_zexall {
-            self.load_zexall_test();
+        if run_zexall  {
+            self.load_zexall_test(rom_filename);
         } else {
             self.load_standard_rom(rom_filename);
         }
@@ -315,12 +315,11 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    fn load_zexall_test(&mut self) {
-        let rom_name = "roms/zexall-0x0100.rom";
+    fn load_zexall_test(&mut self, rom_name: &str) {
         let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
             self.memory.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
-            println!("Loaded ZEXALL test ROM from {}", rom_name);
+            println!("Loaded ZEXALL/ZEXCOM test ROM from {}", rom_name);
 
             // Patch address 5 to add RET instruction to avoid hanging
             self.memory.rom[5] = 0xC9; // RET
@@ -335,7 +334,7 @@ impl MachineZxSpectrum48 {
             self.cpu.halted = false;
             self.cpu.int_requested = false;
         } else {
-            println!("Error: Could not load ZEXALL test ROM from {}. Using fallback program.", rom_name);
+            println!("Error: Could not load ZEXALL/ZEXCOM test ROM from {}. Using fallback program.", rom_name);
             self.load_fallback_program();
         }
     }

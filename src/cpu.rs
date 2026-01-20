@@ -3367,6 +3367,11 @@ impl Z80 {
                 self.e = bus.read_byte(addr);
                 19
             }
+            0x5F => { // LD E, A (undocumented)
+                self.e = self.a;
+                // flags unchanged
+                8
+            }
             0x60 => { // LD IXH, B (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.b as u16) << 8);
                 8
@@ -3479,6 +3484,26 @@ impl Z80 {
                 bus.write_byte(addr, self.a);
                 19
             }
+            0x78 => { // LD A, B (undocumented)
+                self.a = self.b;
+                // flags unchanged
+                8
+            }
+            0x79 => { // LD A, C (undocumented)
+                self.a = self.c;
+                // flags unchanged
+                8
+            }
+            0x7A => { // LD A, D (undocumented)
+                self.a = self.d;
+                // flags unchanged
+                8
+            }
+            0x7B => { // LD A, E (undocumented)
+                self.a = self.e;
+                // flags unchanged
+                8
+            }
             0x7C => { // LD A, IXH (undocumented)
                 self.a = (self.ix >> 8) as u8;
                 8
@@ -3492,6 +3517,10 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 self.a = bus.read_byte(addr);
                 19
+            }
+            0x7F => { // LD A, A (undocumented)
+                // flags unchanged
+                8
             }
             0x84 => { // ADD A, IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
@@ -3949,16 +3978,19 @@ impl Z80 {
             }
             0x4C => { // LD C, IYH (undocumented)
                 self.c = (self.iy >> 8) as u8;
+                // flags unchanged
                 8
             }
             0x4D => { // LD C, IYL (undocumented)
                 self.c = self.iy as u8;
+                // flags unchanged
                 8
             }
             0x4E => { // LD C, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.c = bus.read_byte(addr);
+                // flags unchanged
                 19
             }
             0x4F => { // LD C, A (undocumented)
@@ -3987,34 +4019,70 @@ impl Z80 {
             }
             0x54 => { // LD D, IYH (undocumented)
                 self.d = (self.iy >> 8) as u8;
+                // flags unchanged
                 8
             }
             0x55 => { // LD D, IYL (undocumented)
                 self.d = self.iy as u8;
+                // flags unchanged
                 8
             }
             0x56 => { // LD D, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.d = bus.read_byte(addr);
+                // flags unchanged
                 19
+            }
+            0x57 => { // LD D, A (undocumented)
+                self.d = self.a;
+                // flags unchanged
+                8
+            }
+            0x58 => { // LD E, B (undocumented)
+                self.e = self.b;
+                // flags unchanged
+                8
+            }
+            0x59 => { // LD E, C (undocumented)
+                self.e = self.c;
+                // flags unchanged
+                8
+            }
+            0x5A => { // LD E, D (undocumented)
+                self.e = self.d;
+                // flags unchanged
+                8
+            }
+            0x5B => { // LD E, E (undocumented)
+                // flags unchanged
+                8
             }
             0x5C => { // LD E, IYH (undocumented)
                 self.e = (self.iy >> 8) as u8;
+                // flags unchanged
                 8
             }
             0x5D => { // LD E, IYL (undocumented)
                 self.e = self.iy as u8;
+                // flags unchanged
                 8
             }
             0x5E => { // LD E, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.e = bus.read_byte(addr);
+                // flags unchanged
                 19
+            }
+            0x5F => { // LD E, A (undocumented)
+                self.e = self.a;
+                // flags unchanged
+                8
             }
             0x60 => { // LD IYH, B (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.b as u16) << 8);
+
                 8
             }
             0x61 => { // LD IYH, C (undocumented)
@@ -4125,6 +4193,26 @@ impl Z80 {
                 bus.write_byte(addr, self.a);
                 19
             }
+            0x78 => { // LD A, B (undocumented)
+                self.a = self.b;
+                // flags unchanged
+                8
+            }
+            0x79 => { // LD A, C (undocumented)
+                self.a = self.c;
+                // flags unchanged
+                8
+            }
+            0x7A => { // LD A, D (undocumented)
+                self.a = self.d;
+                // flags unchanged
+                8
+            }
+            0x7B => { // LD A, E (undocumented)
+                self.a = self.e;
+                // flags unchanged
+                8
+            }
             0x7C => { // LD A, IYH (undocumented)
                 self.a = (self.iy >> 8) as u8;
                 8
@@ -4138,6 +4226,30 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 self.a = bus.read_byte(addr);
                 19
+            }
+            0x7F => { // LD A, A (undocumented)
+                // flags unchanged
+                8
+            }
+            0x80 => { // ADD A, B (undocumented)
+                self.a = self.add8(self.a, self.b);
+                // flags updated above
+                8
+            }
+            0x81 => { // ADD A, C (undocumented)
+                self.a = self.add8(self.a, self.c);
+                // flags updated above
+                8
+            }
+            0x82 => { // ADD A, D (undocumented)
+                self.a = self.add8(self.a, self.d);
+                // flags updated above
+                8
+            }
+            0x83 => { // ADD A, E (undocumented)
+                self.a = self.add8(self.a, self.e);
+                // flags updated above
+                8
             }
             0x84 => { // ADD A, IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
@@ -4161,6 +4273,11 @@ impl Z80 {
                 self.set_flags_add(self.a, val, result);
                 self.a = result as u8;
                 19
+            }
+            0x87 => { // ADD A, A (undocumented)
+                self.a = self.add8(self.a, self.a);
+                // flags updated above
+                8
             }
             0x8C => { // ADC A, IYH (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };

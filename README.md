@@ -10,7 +10,7 @@ TODO:
 Testing CPU status (ZEXALL):
 ============================
 ```
-Loaded ZEXALL test ROM from roms/zexall-0x0100.rom
+Loaded ZEXALL/ZEXCOM test ROM from roms/zexall-0x0100.rom
 Z80 instruction exerciser
 <adc,sbc> hl,<bc,de,hl,sp>....  ERROR **** crc expected:d48ad519 found:f39089a0
 add hl,<bc,de,hl,sp>..........  OK
@@ -62,7 +62,14 @@ ld <h,l>,(<ix,iy>+1)..........  OK
 ld a,(<ix,iy>+1)..............  OK
 ld <ixh,ixl,iyh,iyl>,nn.......  OK
 ld <bcdehla>,<bcdehla>........  OK
-ld <bcdexya>,<bcdexya>........
-thread 'main' panicked at src\cpu.rs:3606:17:
-Unimplemented DD opcode: 40
+ld <bcdexya>,<bcdexya>........  OK
+ld a,(nnnn) / ld (nnnn),a.....  OK
+ldd<r> (1)....................  OK
+ldd<r> (2)....................  ERROR **** crc expected:39dd3de1 found:58232761
+ldi<r> (1)....................  ERROR **** crc expected:f782b0d1 found:980eaf00
+ldi<r> (2)....................  ERROR **** crc expected:e9ead0ae found:e798d5ff
+neg...........................  ERROR **** crc expected:d638dd6a found:f7dc0ecd
+<rrd,rld>.....................
+thread 'main' panicked at src\cpu.rs:2755:17:
+Unimplemented ED opcode: 0x67 RRD
 ```

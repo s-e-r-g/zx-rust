@@ -22,6 +22,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  --trace-int       Enable interrupt tracing");
         println!("  --rom=<file>      Load specified ROM file (default: roms/48.rom)");
         println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
+        println!("  --run-zexcom      Run ZEXCOM instruction set exerciser test");
         println!("  --max-speed       Disable frame rate limiting for maximum speed");
         println!("  --show-fps        Display current FPS in the top-left corner");
         println!("  --no-ui           Run in headless mode for maximum performance (e.g., for tests)");
@@ -33,6 +34,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  {} --trace-int    Run with interrupt tracing", args[0]);
         println!("  {} --rom=roms/Robik48.rom  Load alternative ROM", args[0]);
         println!("  {} --run-zexall   Run ZEXALL test", args[0]);
+        println!("  {} --run-zexcom   Run ZEXCOM test", args[0]);
         println!("  {} --max-speed    Run at maximum speed", args[0]);
         println!("  {} --show-fps     Show FPS counter", args[0]);
         std::process::exit(0);
@@ -41,12 +43,19 @@ fn main() -> Result<(), eframe::Error> {
     let enable_disassembler = args.contains(&"--disasm".to_string());
     let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
     let run_zexall = args.contains(&"--run-zexall".to_string());
+    let run_zexcom = args.contains(&"--run-zexcom".to_string());
     let max_speed = args.contains(&"--max-speed".to_string());
     let show_fps = args.contains(&"--show-fps".to_string());
     let no_ui = args.contains(&"--no-ui".to_string());
     
     // Parse ROM filename
     let mut rom_filename = "roms/48.rom".to_string();
+    if run_zexall {
+        rom_filename = "roms/zexall-0x0100.rom".to_string();
+    } else if run_zexcom {
+        rom_filename = "roms/zexcom-0x0100.rom".to_string();
+    }
+
     for arg in &args {
         if arg.starts_with("--rom=") {
             rom_filename = arg[6..].to_string();
@@ -54,7 +63,7 @@ fn main() -> Result<(), eframe::Error> {
     }
 
     if no_ui {
-        let mut emulator = MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall);
+        let mut emulator = MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall || run_zexcom);
         loop {
             emulator.run_until_frame();
         }
@@ -63,7 +72,7 @@ fn main() -> Result<(), eframe::Error> {
         eframe::run_native(
             "ZX Spectrum Emulator",
             options,
-            Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall, max_speed, show_fps))),
+            Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall || run_zexcom, max_speed, show_fps))),
         )
     }
 }
