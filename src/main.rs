@@ -19,24 +19,36 @@ fn main() -> Result<(), eframe::Error> {
         println!("Options:");
         println!("  --disasm          Enable instruction disassembly tracing");
         println!("  --trace-int       Enable interrupt tracing");
+        println!("  --rom=<file>      Load specified ROM file (default: roms/48.rom)");
+        println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
         println!("  --help, -h        Show this help message");
         println!();
         println!("Examples:");
         println!("  {}                Run emulator normally", args[0]);
         println!("  {} --disasm       Run with disassembly tracing", args[0]);
         println!("  {} --trace-int    Run with interrupt tracing", args[0]);
-        println!("  {} --disasm --trace-int  Run with both tracing options", args[0]);
+        println!("  {} --rom=roms/Robik48.rom  Load alternative ROM", args[0]);
+        println!("  {} --run-zexall   Run ZEXALL test", args[0]);
         std::process::exit(0);
     }
     
     let enable_disassembler = args.contains(&"--disasm".to_string());
     let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
+    let run_zexall = args.contains(&"--run-zexall".to_string());
+    
+    // Parse ROM filename
+    let mut rom_filename = "roms/48.rom".to_string();
+    for arg in &args {
+        if arg.starts_with("--rom=") {
+            rom_filename = arg[6..].to_string();
+        }
+    }
 
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "ZX Spectrum Emulator",
         options,
-        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts))),
+        Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall))),
     )
 }
 
@@ -70,9 +82,9 @@ impl MyApp {
 }
 
 impl MyApp {
-    fn new(enable_disassembler: bool, enable_trace_interrupts: bool) -> Self {
+    fn new(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
         Self {
-            emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts),
+            emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall),
             last_frame_generation_start_time: std::time::Instant::now(),
         }
     }
@@ -80,7 +92,7 @@ impl MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false, false)
+        Self::new(false, false, "roms/48.rom".to_string(), false)
     }
 }
 

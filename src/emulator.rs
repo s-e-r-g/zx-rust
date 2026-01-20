@@ -273,14 +273,14 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn new() -> Self {
-        Self::new_with_options(false, false)
+        Self::new_with_options(false, false, "roms/48.rom".to_string(), false)
     }
 
     pub fn new_with_disassembler(enable_disassembler: bool) -> Self {
-        Self::new_with_options(enable_disassembler, false)
+        Self::new_with_options(enable_disassembler, false, "roms/48.rom".to_string(), false)
     }
 
-    pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool) -> Self {
+    pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
             memory: Memory48k {
@@ -295,27 +295,42 @@ impl MachineZxSpectrum48 {
             enable_disassembler: enable_disassembler,
             enable_trace_interrupts: enable_trace_interrupts,
         };
-        machine.load_rom();
+        machine.load_rom(&rom_filename, run_zexall);
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
         //     println!("Error loading test.tap: {}", e);
         // }   );
         machine
     }
 
-    pub fn load_rom(&mut self) {
-        let mut loaded = false;
-        // let rom_name = "48.rom";
+    pub fn load_rom(&mut self, rom_filename: &str, run_zexall: bool) {
+        if run_zexall {
+            self.load_zexall_test();
+        } else {
+            self.load_standard_rom(rom_filename);
+        }
+    }
+
+    fn load_standard_rom(&mut self, rom_filename: &str) {
+        if let Ok(rom) = std::fs::read(rom_filename) {
+            if rom.len() == 0x4000 {
+                self.memory.rom.copy_from_slice(&rom);
+                println!("Loaded ROM from {}", rom_filename);
+            } else {
+                println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_filename, rom.len());
+                self.load_fallback_program();
+            }
+        } else {
+            println!("Error: Could not load ROM from {}. Using fallback program.", rom_filename);
+            self.load_fallback_program();
+        }
+    }
+
+    fn load_zexall_test(&mut self) {
         let rom_name = "roms/zexall-0x0100.rom";
         let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
-            // Check if it looks like a valid ROM (exact size for 48K ROM)
-            //if rom.len() == 16384 {
             self.memory.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
-            loaded = true;
-            // } else {
-            //     println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_name, rom.len());
-            // }
-            println!("Loaded ROM from {}", rom_name);
+            println!("Loaded ZEXALL test ROM from {}", rom_name);
 
             // Patch address 5 to add RET instruction to avoid hanging
             self.memory.rom[5] = 0xC9; // RET
@@ -329,22 +344,26 @@ impl MachineZxSpectrum48 {
             self.cpu.iff2 = false;
             self.cpu.halted = false;
             self.cpu.int_requested = false;
+        } else {
+            println!("Error: Could not load ZEXALL test ROM from {}. Using fallback program.", rom_name);
+            self.load_fallback_program();
         }
-        if !loaded {
-            println!("Loading built-in test program...");
-            // Simple test program to fill screen
-            let code: &[u8] = &[
-                0x21, 0x00, 0x40, // LD HL, 0x4000
-                0x34,             // INC (HL)
-                0x23,             // INC HL
-                0x7C,             // LD A, H
-                0xFE, 0x58,       // CP 0x58
-                0x20, 0xF7,       // JR NZ, -9 (to 0x34)
-                0xC3, 0x00, 0x00, // JP 0x0000
-            ];
-            for (i, &b) in code.iter().enumerate() {
-                self.memory.rom[i] = b;
-            }
+    }
+
+    fn load_fallback_program(&mut self) {
+        println!("Loading built-in test program...");
+        // Simple test program to fill screen
+        let code: &[u8] = &[
+            0x21, 0x00, 0x40, // LD HL, 0x4000
+            0x34,             // INC (HL)
+            0x23,             // INC HL
+            0x7C,             // LD A, H
+            0xFE, 0x58,       // CP 0x58
+            0x20, 0xF7,       // JR NZ, -9 (to 0x34)
+            0xC3, 0x00, 0x00, // JP 0x0000
+        ];
+        for (i, &b) in code.iter().enumerate() {
+            self.memory.rom[i] = b;
         }
     }
 
