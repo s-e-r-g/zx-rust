@@ -164,6 +164,7 @@ pub struct MachineZxSpectrum48 {
     frame_ready: bool,
     pub screen_buffer: Vec<u8>,
     keyboard: [u8; 8],
+    enable_disassembler: bool,
 }
 
 
@@ -271,6 +272,10 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn new() -> Self {
+        Self::new_with_disassembler(false)
+    }
+
+    pub fn new_with_disassembler(enable_disassembler: bool) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
             memory: Memory48k {
@@ -282,6 +287,7 @@ impl MachineZxSpectrum48 {
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             keyboard: [0xFF; 8],
+            enable_disassembler: enable_disassembler,
         };
         machine.load_rom();
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
@@ -307,7 +313,10 @@ impl MachineZxSpectrum48 {
 
             // Patch address 5 to add RET instruction to avoid hanging
             self.memory.rom[5] = 0xC9; // RET
-            self.memory.rom[0x38] = 0xC9; // RET
+            self.memory.rom[0x38] = 0xFB; // EI
+            self.memory.rom[0x39] = 0xED; // RETI
+            self.memory.rom[0x3A] = 0x4D;
+
             self.cpu.pc = 0x100;
             self.cpu.sp = 0xF000;
             self.cpu.iff1 = false;
@@ -430,7 +439,7 @@ impl MachineZxSpectrum48 {
 
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
 
-                self.cpu.step(bus)
+                self.cpu.step(bus, self.enable_disassembler)
 
             };
             for _ in 0..t_states {

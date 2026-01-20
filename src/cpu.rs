@@ -5,7 +5,10 @@
 
 use core::panic;
 
+use std::io::{self, Write};
+
 use crate::emulator::{Bus, Memory};
+use crate::disassembler::Disassembler;
 
 // Z80 CPU Flag register bits
 const F_S: u8 = 0x80;   // Sign flag
@@ -66,6 +69,8 @@ pub struct Z80 {
     pub int_requested: bool,
     pub halted: bool,
     pub ei_pending: bool,
+
+    disassembler: Disassembler,
 }
 
 impl Z80 {
@@ -89,6 +94,7 @@ impl Z80 {
             int_requested: false,
             halted: false,
             ei_pending: false,
+            disassembler: Disassembler::new(),
         }
     }
 
@@ -399,95 +405,10 @@ impl Z80 {
         let high = bus.read_byte(self.pc.wrapping_add(offset.wrapping_add(1)));
         (high as u16) << 8 | low as u16
     }
-    
-    // Helper for CB-prefixed instructions
-    fn disassemble_cb_instruction(&self, cb_opcode: u8) -> String {
-        let reg_names_8 = ["B", "C", "D", "E", "H", "L", "(HL)", "A"];
-        let bit_op_types = ["RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"];
-        let bit = (cb_opcode >> 3) & 0x07;
-        let reg_idx = cb_opcode & 0x07;
 
-        match cb_opcode {
-            0x00..=0x3F => format!("{} {}", bit_op_types[((cb_opcode >> 3) & 0x07) as usize], reg_names_8[reg_idx as usize]),
-            0x40..=0x7F => format!("BIT {}, {}", bit, reg_names_8[reg_idx as usize]),
-            0x80..=0xBF => format!("RES {}, {}", bit, reg_names_8[reg_idx as usize]),
-            0xC0..=0xFF => format!("SET {}, {}", bit, reg_names_8[reg_idx as usize]),
-            _ => format!("UNKNOWN CB {:02X}", cb_opcode),
-        }
-    }
 
-    // Helper for ED-prefixed instructions
-    fn disassemble_ed_instruction(&self, ed_opcode: u8, bus: &dyn Bus) -> (String, u16) {
-        let mut instruction_len = 2; // ED prefix + opcode
-        let mnemonic = match ed_opcode {
-            0x40 => "IN B, (C)".to_string(),
-            0x41 => "OUT (C), B".to_string(),
-            0x42 => "SBC HL, BC".to_string(),
-            0x43 => { instruction_len = 4; format!("LD ({:04X}), BC", self.read_word_at_pc_offset(bus, 2)) },
-            0x44 => "NEG".to_string(),
-            0x45 => "RETN".to_string(),
-            0x46 => "IM 0".to_string(),
-            0x47 => "LD I, A".to_string(),
-            0x48 => "IN C, (C)".to_string(),
-            0x49 => "OUT (C), C".to_string(),
-            0x4A => "ADC HL, BC".to_string(),
-            0x4B => { instruction_len = 4; format!("LD BC, ({:04X})", self.read_word_at_pc_offset(bus, 2)) },
-            0x4D => "RETI".to_string(),
-            0x4F => "LD R, A".to_string(),
-            0x50 => "IN D, (C)".to_string(),
-            0x51 => "OUT (C), D".to_string(),
-            0x52 => "SBC HL, DE".to_string(),
-            0x53 => { instruction_len = 4; format!("LD ({:04X}), DE", self.read_word_at_pc_offset(bus, 2)) },
-            0x56 => "IM 1".to_string(),
-            0x57 => "LD A, I".to_string(),
-            0x58 => "IN E, (C)".to_string(),
-            0x59 => "OUT (C), E".to_string(),
-            0x5A => "ADC HL, DE".to_string(),
-            0x5B => { instruction_len = 4; format!("LD DE, ({:04X})", self.read_word_at_pc_offset(bus, 2)) },
-            0x5E => "IM 2".to_string(),
-            0x5F => "LD A, R".to_string(),
-            0x60 => "IN H, (C)".to_string(),
-            0x61 => "OUT (C), H".to_string(),
-            0x62 => "SBC HL, HL".to_string(),
-            0x63 => { instruction_len = 4; format!("LD ({:04X}), HL", self.read_word_at_pc_offset(bus, 2)) },
-            0x67 => "RRD".to_string(),
-            0x68 => "IN L, (C)".to_string(),
-            0x69 => "OUT (C), L".to_string(),
-            0x6A => "ADC HL, HL".to_string(), // Added ADC HL, HL
-            0x6B => { instruction_len = 4; format!("LD HL, ({:04X})", self.read_word_at_pc_offset(bus, 2)) },
-            0x6F => "RLD".to_string(),
-            0x72 => "SBC HL, SP".to_string(),
-            0x73 => { instruction_len = 4; format!("LD ({:04X}), SP", self.read_word_at_pc_offset(bus, 2)) },
-            0x78 => "IN A, (C)".to_string(),
-            0x79 => "OUT (C), A".to_string(),
-            0x7A => "ADC HL, SP".to_string(),
-            0x7B => { instruction_len = 4; format!("LD SP, ({:04X})", self.read_word_at_pc_offset(bus, 2)) },
-
-            // Block Transfer and Search Instructions
-            0xA0 => "LDI".to_string(),
-            0xA1 => "CPI".to_string(),
-            0xA2 => "INI".to_string(),
-            0xA3 => "OUTI".to_string(),
-            0xA8 => "LDD".to_string(),
-            0xA9 => "CPD".to_string(),
-            0xAA => "IND".to_string(),
-            0xAB => "OUTD".to_string(),
-            0xB0 => "LDIR".to_string(),
-            0xB1 => "CPIR".to_string(),
-            0xB2 => "INIR".to_string(),
-            0xB3 => "OTIR".to_string(),
-            0xB8 => "LDDR".to_string(),
-            0xB9 => "CPDR".to_string(),
-            0xBA => "INDR".to_string(),
-            0xBB => "OTDR".to_string(),
-
-            _ => format!("UNKNOWN ED {:02X}", ed_opcode),
-        };
-        (mnemonic, instruction_len)
-    }
-    
     pub fn disassemble_instruction(&self, bus: &dyn Bus) -> (String, u16) {
-        let mut addr = self.pc;
+        let addr = self.pc;
         let opcode = bus.read_byte(addr);
         let mut instruction_len = 1;
         let mut mnemonic = String::new();
@@ -585,7 +506,7 @@ impl Z80 {
                         let d = self.read_byte_at_pc_offset(bus, 2) as i8;
                         let ddcbc_opcode = self.read_byte_at_pc_offset(bus, 3);
                         instruction_len = 4;
-                        let reg_names_8 = ["B", "C", "D", "E", "H", "L", "(IX+d)", "A"];
+                        let _reg_names_8 = ["B", "C", "D", "E", "H", "L", "(IX+d)", "A"];
                         let bit_op_types = ["RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"];
 
                         match ddcbc_opcode {
@@ -611,26 +532,8 @@ impl Z80 {
                 }
             }
             0xED => {
-                let ed_opcode = bus.read_byte(addr.wrapping_add(1));
-                instruction_len = 2;
-                match ed_opcode {
-                    0x43 => { mnemonic = format!("LD ({:04X}), BC", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x4B => { mnemonic = format!("LD BC, ({:04X})", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x53 => { mnemonic = format!("LD ({:04X}), DE", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x5B => { mnemonic = format!("LD DE, ({:04X})", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x73 => { mnemonic = format!("LD ({:04X}), SP", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x7B => { mnemonic = format!("LD SP, ({:04X})", self.read_word_at_pc_offset(bus, 2)); instruction_len = 4; }
-                    0x40..=0x7F => mnemonic = format!("ED {:02X}", ed_opcode), // For now, keep as generic for other ED instructions
-                    0xA0 => mnemonic = "LDI".to_string(),
-                    0xA1 => mnemonic = "CPI".to_string(),
-                    0xA8 => mnemonic = "LDD".to_string(),
-                    0xA9 => mnemonic = "CPD".to_string(),
-                    0xB0 => mnemonic = "LDIR".to_string(),
-                    0xB1 => mnemonic = "CPIR".to_string(),
-                    0xB8 => mnemonic = "LDDR".to_string(),
-                    0xB9 => mnemonic = "CPDR".to_string(),
-                    _ => mnemonic = format!("ED {:02X}", ed_opcode),
-                }
+                let _ed_opcode = bus.read_byte(addr.wrapping_add(1));
+                (mnemonic, instruction_len) = ("UNKNOWN ED".to_string(), 2);
             }
             0xFD => {
                 let fd_opcode = bus.read_byte(addr.wrapping_add(1));
@@ -644,7 +547,7 @@ impl Z80 {
                         let d = self.read_byte_at_pc_offset(bus, 2) as i8;
                         let fdcb_opcode = self.read_byte_at_pc_offset(bus, 3);
                         instruction_len = 4;
-                        let reg_names_8 = ["B", "C", "D", "E", "H", "L", "(IY+d)", "A"];
+                        let _reg_names_8 = ["B", "C", "D", "E", "H", "L", "(IY+d)", "A"];
                         let bit_op_types = ["RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"];
 
                         match fdcb_opcode {
@@ -837,31 +740,21 @@ impl Z80 {
         (mnemonic, instruction_len)
     }
 
-    pub fn step(&mut self, bus: &mut dyn Bus) -> u32 {
-        let enable_trace_disassembler = false;
+    pub fn step(&mut self, bus: &mut dyn Bus, enable_trace_disassembler: bool) -> u32 {
         let enable_trace_interrupts = true;
 
         let current_pc = self.pc;
         
 
         if enable_trace_disassembler {
-            let (disassembly, instruction_len) = self.disassemble_instruction(bus);
-            let mut instruction_bytes = Vec::new();
-            for i in 0..instruction_len {
-                instruction_bytes.push(bus.read_byte(current_pc.wrapping_add(i)));
-            }
-            println!("{:04X}: {:<10} | A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} IX:{:04X} IY:{:04X} I:{:02X} R:{:02X} | Bytes: {}",
-                current_pc,
-                disassembly,
-                self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.ix, self.iy, self.i, self.r,
-                instruction_bytes.iter().map(|b| format!("{:02X}", b)).collect::<Vec<String>>().join(" "),
-            );
+            self.disassembler.trace_instruction(bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.ix, self.iy, self.i, self.r);
         }
 
         // debug zexall
         if current_pc == 0x0005 {
             if self.c == 2 {
                 print!("{}", self.e as char);
+                io::stdout().flush().unwrap();
             }
             else if self.c == 9 {
                 // print string until '$'
@@ -872,6 +765,9 @@ impl Z80 {
                         break;
                     }
                     print!("{}", ch as char);
+                    io::stdout().flush().unwrap();
+                    // flush stdout
+                    //std::io::stdout;
                     addr = addr.wrapping_add(1);
                 }
             }
@@ -890,7 +786,7 @@ impl Z80 {
         }
 
         if self.int_requested {
-            if (enable_trace_interrupts) {
+            if enable_trace_interrupts {
                 println!("Interrupt requested at PC={:04X}", self.pc);
             }
             self.int_requested = false;
