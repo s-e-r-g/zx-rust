@@ -423,6 +423,9 @@ impl Z80 {
                     }
                 }
             }
+            else if current_pc == 0 {
+                std::process::exit(0);
+            }
         }
 
         if self.halted {
@@ -3827,6 +3830,13 @@ impl Z80 {
                 self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
+            0x36 => { // SLL (IX+d)
+                let val = bus.read_byte(addr);
+                let new_val = val << 1  | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                23
+            }
             0x3E => { // SRL (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
@@ -4559,6 +4569,13 @@ impl Z80 {
                 let new_val = (val >> 1) | (val & 0x80);
                 bus.write_byte(addr, new_val);
                 self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                23
+            }
+            0x36 => { // SLL (IY+d)
+                let val = bus.read_byte(addr);
+                let new_val = val << 1;
+                bus.write_byte(addr, new_val);
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
             0x3E => { // SRL (IY+d)

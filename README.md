@@ -11,6 +11,10 @@ TODO:
 Testing CPU status (ZEXALL):
 ============================
 ```
+$ cargo run --release -- --run-zexall --no-ui
+```
+
+```
 Loaded ZEXALL/ZEXCOM test ROM from roms/zexall-0x0100.rom
 Z80 instruction exerciser
 <adc,sbc> hl,<bc,de,hl,sp>....  ERROR **** crc expected:d48ad519 found:f39089a0
@@ -72,7 +76,13 @@ ldi<r> (2)....................  ERROR **** crc expected:e9ead0ae found:e798d5ff
 neg...........................  ERROR **** crc expected:d638dd6a found:f7dc0ecd
 <rrd,rld>.....................  OK
 <rlca,rrca,rla,rra>...........  OK
-shf/rot (<ix,iy>+1)...........
-thread 'main' panicked at src\cpu.rs:3858:17:
-Unimplemented DDCB opcode: 36
+shf/rot (<ix,iy>+1)...........  ERROR **** crc expected:710034cb found:0e312ba1
+shf/rot <b,c,d,e,h,l,(hl),a>..  OK
+<set,res> n,<bcdehl(hl)a>.....  ERROR **** crc expected:8b57f008 found:a965275e
+<set,res> n,(<ix,iy>+1).......  OK
+ld (<ix,iy>+1),<b,c,d,e>......  OK
+ld (<ix,iy>+1),<h,l>..........  OK
+ld (<ix,iy>+1),a..............  OK
+ld (<bc,de>),a................  OK
+Tests complete
 ```
