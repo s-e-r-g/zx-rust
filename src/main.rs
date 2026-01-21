@@ -22,7 +22,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  --trace-int       Enable interrupt tracing");
         println!("  --rom=<file>      Load specified ROM file (default: roms/48.rom)");
         println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
-        println!("  --run-zexcom      Run ZEXCOM instruction set exerciser test");
+        println!("  --run-zexdoc      Run ZEXDOC instruction set exerciser test");
         println!("  --max-speed       Disable frame rate limiting for maximum speed");
         println!("  --show-fps        Display current FPS in the top-left corner");
         println!(
@@ -36,7 +36,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  {} --trace-int    Run with interrupt tracing", args[0]);
         println!("  {} --rom=roms/Robik48.rom  Load alternative ROM", args[0]);
         println!("  {} --run-zexall   Run ZEXALL test", args[0]);
-        println!("  {} --run-zexcom   Run ZEXCOM test", args[0]);
+        println!("  {} --run-zexdoc   Run ZEXDOC test", args[0]);
         println!("  {} --max-speed    Run at maximum speed", args[0]);
         println!("  {} --show-fps     Show FPS counter", args[0]);
         std::process::exit(0);
@@ -45,7 +45,7 @@ fn main() -> Result<(), eframe::Error> {
     let enable_disassembler = args.contains(&"--disasm".to_string());
     let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
     let run_zexall = args.contains(&"--run-zexall".to_string());
-    let run_zexcom = args.contains(&"--run-zexcom".to_string());
+    let run_zexdoc = args.contains(&"--run-zexdoc".to_string());
     let max_speed = args.contains(&"--max-speed".to_string());
     let show_fps = args.contains(&"--show-fps".to_string());
     let no_ui = args.contains(&"--no-ui".to_string());
@@ -54,8 +54,8 @@ fn main() -> Result<(), eframe::Error> {
     let mut rom_filename = "roms/48.rom".to_string();
     if run_zexall {
         rom_filename = "roms/zexall-0x0100.rom".to_string();
-    } else if run_zexcom {
-        rom_filename = "roms/zexcom-0x0100.rom".to_string();
+    } else if run_zexdoc {
+        rom_filename = "roms/zexdoc-0x0100.rom".to_string();
     }
 
     for arg in &args {
@@ -69,7 +69,7 @@ fn main() -> Result<(), eframe::Error> {
             enable_disassembler,
             enable_trace_interrupts,
             rom_filename,
-            run_zexall || run_zexcom,
+            run_zexall || run_zexdoc,
         );
         loop {
             emulator.run_until_frame_without_ula();
@@ -84,7 +84,7 @@ fn main() -> Result<(), eframe::Error> {
                     enable_disassembler,
                     enable_trace_interrupts,
                     rom_filename,
-                    run_zexall || run_zexcom,
+                    run_zexall || run_zexdoc,
                     max_speed,
                     show_fps,
                 ))

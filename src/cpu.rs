@@ -7549,7 +7549,11 @@ mod tests {
         machine.step(); // ADD A,B
         assert_eq!(machine.cpu.a, 18);
         machine.step(); // DAA
-        assert_eq!(machine.cpu.a, 0x18, "A after DAA (add) was {:02X}", machine.cpu.a);
+        assert_eq!(
+            machine.cpu.a, 0x18,
+            "A after DAA (add) was {:02X}",
+            machine.cpu.a
+        );
         println!("Flags after DAA (add): {:08b}", machine.cpu.f);
         assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (add)");
         assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (add)");
@@ -7565,7 +7569,11 @@ mod tests {
         machine.step(); // SUB 0x06
         assert_eq!(machine.cpu.a, 0x0F, "A after SUB was {:02X}", machine.cpu.a);
         machine.step(); // DAA
-        assert_eq!(machine.cpu.a, 0x09, "A after DAA (sub) was {:02X}", machine.cpu.a);
+        assert_eq!(
+            machine.cpu.a, 0x09,
+            "A after DAA (sub) was {:02X}",
+            machine.cpu.a
+        );
         assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (sub)");
         assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (sub)");
         assert_eq!(machine.cpu.f & F_H, 0, "H flag after DAA (sub)");

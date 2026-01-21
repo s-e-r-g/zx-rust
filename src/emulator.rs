@@ -373,7 +373,7 @@ impl MachineZxSpectrum48 {
             self.cpu.int_requested = false;
         } else {
             println!(
-                "Error: Could not load ZEXALL/ZEXCOM test ROM from {}. Using fallback program.",
+                "Error: Could not load ZEXALL/ZEXDOC test ROM from {}. Using fallback program.",
                 rom_name
             );
             self.load_fallback_program();
