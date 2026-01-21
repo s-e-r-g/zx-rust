@@ -45,11 +45,11 @@ cpi<r>........................  OK
 <inc,dec> (hl)................  OK
 <inc,dec> sp..................  OK
 <inc,dec> (<ix,iy>+1).........  OK
-<inc,dec> ixh.................  ERROR **** crc expected:6f463662 found:04c71dc4
-<inc,dec> ixl.................  ERROR **** crc expected:027bef2c found:705b9016
-<inc,dec> iyh.................  ERROR **** crc expected:2d966cf3 found:5fb613c9
-<inc,dec> iyl.................  ERROR **** crc expected:36c11e75 found:44e1614f
-ld <bc,de>,(nnnn).............  ERROR **** crc expected:4d45a9ac found:b21e8b4d
+<inc,dec> ixh.................  OK
+<inc,dec> ixl.................  OK
+<inc,dec> iyh.................  OK
+<inc,dec> iyl.................  OK
+ld <bc,de>,(nnnn).............  OK
 ld hl,(nnnn)..................  OK
 ld sp,(nnnn)..................  OK
 ld <ix,iy>,(nnnn).............  OK

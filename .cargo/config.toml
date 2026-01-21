@@ -1,0 +1,2 @@
+[alias]
+zexall = "run --release -- --run-zexall --no-ui"

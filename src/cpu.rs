@@ -3029,7 +3029,9 @@ impl Z80 {
             0x4B => {
                 // LD BC, (nn)
                 let nn = self.read_word_pc(bus);
-                self.set_bc(nn);
+                let c = bus.read_byte(nn) as u16;
+                let b = bus.read_byte(nn.wrapping_add(1)) as u16;
+                self.set_bc((b << 8) | c);
                 20
             }
             0x4C => {
@@ -3135,7 +3137,9 @@ impl Z80 {
             0x5B => {
                 // LD DE, (nn)
                 let nn = self.read_word_pc(bus);
-                self.set_de(nn);
+                let e = bus.read_byte(nn) as u16;
+                let d = bus.read_byte(nn.wrapping_add(1)) as u16;
+                self.set_de((d << 8) | e);
                 20
             }
             0x5C => {
@@ -3685,15 +3689,14 @@ impl Z80 {
                 // INC IXH (undocumented)
                 let result = ((self.ix >> 8) as u8).wrapping_add(1);
                 self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
-                self.set_flags_add(result as u8, 1, result as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(result);
                 8
             }
             0x25 => {
                 // DEC IXH (undocumented)
                 let result = ((self.ix >> 8) as u8).wrapping_sub(1);
                 self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
-                self.set_flags_sub(result as u8, 1, result as i16);
+                self.set_flags_dec_r8(result);
                 8
             }
             0x26 => {
@@ -3725,15 +3728,14 @@ impl Z80 {
                 // INC IXL (undocumented)
                 let result = (self.ix as u8).wrapping_add(1);
                 self.ix = (self.ix & 0xFF00) | result as u16;
-                self.set_flags_add(result, 1, result as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(result);
                 8
             }
             0x2D => {
                 // DEC IXL (undocumented)
                 let result = (self.ix as u8).wrapping_sub(1);
                 self.ix = (self.ix & 0xFF00) | result as u16;
-                self.set_flags_sub(result, 1, result as i16);
+                self.set_flags_dec_r8(result);
                 8
             }
             0x2E => {
@@ -4610,15 +4612,14 @@ impl Z80 {
                 // INC IYH (undocumented)
                 let result = ((self.iy >> 8) as u8).wrapping_add(1);
                 self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
-                self.set_flags_add(result, 1, result as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(result);
                 8
             }
             0x25 => {
                 // DEC IYH (undocumented)
                 let result = ((self.iy >> 8) as u8).wrapping_sub(1);
                 self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
-                self.set_flags_sub(result, 1, result as i16);
+                self.set_flags_dec_r8(result);
                 8
             }
             0x26 => {
@@ -4650,15 +4651,14 @@ impl Z80 {
                 // INC IYL (undocumented)
                 let result = (self.iy as u8).wrapping_add(1);
                 self.iy = (self.iy & 0xFF00) | result as u16;
-                self.set_flags_add(result, 1, result as u16);
-                self.f &= !F_N;
+                self.set_flags_inc_r8(result);
                 8
             }
             0x2D => {
                 // DEC IYL (undocumented)
                 let result = (self.iy as u8).wrapping_sub(1);
                 self.iy = (self.iy & 0xFF00) | result as u16;
-                self.set_flags_sub(result, 1, result as i16);
+                self.set_flags_dec_r8(result);
                 8
             }
             0x2E => {
