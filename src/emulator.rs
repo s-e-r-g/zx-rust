@@ -37,6 +37,7 @@ const PALETTE: [[u8; 4]; 16] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[rustfmt::skip]
 pub enum Key {
     // Row 0
     Shift, Z, X, C, V,
@@ -92,7 +93,7 @@ impl Ula {
             PALETTE[self.border_color as usize]
         };
         let idx = self.idx() * 4;
-        self.framebuffer[idx..idx+4].copy_from_slice(&pixel);
+        self.framebuffer[idx..idx + 4].copy_from_slice(&pixel);
         self.h_counter += 1;
         if self.h_counter == FULL_WIDTH {
             self.h_counter = 0;
@@ -104,8 +105,10 @@ impl Ula {
     }
 
     fn in_visible_area(&self) -> bool {
-        self.h_counter >= BORDER_H && self.h_counter < BORDER_H + SCREEN_WIDTH &&
-        self.v_counter >= BORDER_V && self.v_counter < BORDER_V + SCREEN_HEIGHT
+        self.h_counter >= BORDER_H
+            && self.h_counter < BORDER_H + SCREEN_WIDTH
+            && self.v_counter >= BORDER_V
+            && self.v_counter < BORDER_V + SCREEN_HEIGHT
     }
 
     fn idx(&self) -> usize {
@@ -116,7 +119,8 @@ impl Ula {
         let x = self.h_counter - BORDER_H;
         let y = self.v_counter - BORDER_V;
         // Calculate pixel address
-        let pixel_addr = 0x4000 + ((y & 0xC0) << 5) | ((y & 0x38) << 2) | ((y & 0x07) << 8) | (x >> 3);
+        let pixel_addr =
+            0x4000 + ((y & 0xC0) << 5) | ((y & 0x38) << 2) | ((y & 0x07) << 8) | (x >> 3);
         let bit = (memory.read_byte(pixel_addr as u16) >> (7 - (x & 7))) & 1;
         // Calculate attribute address
         let attr_addr = 0x5800 + ((y >> 3) * 32) + (x >> 3);
@@ -124,7 +128,11 @@ impl Ula {
         let ink = attr & 7;
         let paper = (attr >> 3) & 7;
         let bright = (attr >> 6) & 1;
-        let color = if bit == 1 { ink | (bright << 3) } else { paper | (bright << 3) };
+        let color = if bit == 1 {
+            ink | (bright << 3)
+        } else {
+            paper | (bright << 3)
+        };
         PALETTE[color as usize]
     }
 }
@@ -139,6 +147,7 @@ pub struct MachineZxSpectrum48 {
     pub screen_buffer: Vec<u8>,
     keyboard: [u8; 8],
     debugger: crate::debugger::Debugger,
+    states_per_frame: u32,
 }
 
 impl Memory for MachineZxSpectrum48 {
@@ -154,8 +163,7 @@ impl Memory for MachineZxSpectrum48 {
         // ROM protection: prevent writes to 0x0000-0x3FFF
         if addr >= 0x4000 {
             self.ram[(addr - 0x4000) as usize] = val;
-        }
-        else {
+        } else {
             // TODO: remove after testing
             self.rom[addr as usize] = val; // Allow writing to ROM for testing purposes
         }
@@ -168,15 +176,31 @@ impl Ports for MachineZxSpectrum48 {
         if (port & 0x0001) == 0 {
             let mut result = 0xFF;
             // Check address lines A8-A15 to see which key row is being scanned
-            if (port & 0x0100) == 0 { result &= self.keyboard[0]; } // A8
-            if (port & 0x0200) == 0 { result &= self.keyboard[1]; } // A9
-            if (port & 0x0400) == 0 { result &= self.keyboard[2]; } // A10
-            if (port & 0x0800) == 0 { result &= self.keyboard[3]; } // A11
-            if (port & 0x1000) == 0 { result &= self.keyboard[4]; } // A12
-            if (port & 0x2000) == 0 { result &= self.keyboard[5]; } // A13
-            if (port & 0x4000) == 0 { result &= self.keyboard[6]; } // A14
-            if (port & 0x8000) == 0 { result &= self.keyboard[7]; } // A15
-            
+            if (port & 0x0100) == 0 {
+                result &= self.keyboard[0];
+            } // A8
+            if (port & 0x0200) == 0 {
+                result &= self.keyboard[1];
+            } // A9
+            if (port & 0x0400) == 0 {
+                result &= self.keyboard[2];
+            } // A10
+            if (port & 0x0800) == 0 {
+                result &= self.keyboard[3];
+            } // A11
+            if (port & 0x1000) == 0 {
+                result &= self.keyboard[4];
+            } // A12
+            if (port & 0x2000) == 0 {
+                result &= self.keyboard[5];
+            } // A13
+            if (port & 0x4000) == 0 {
+                result &= self.keyboard[6];
+            } // A14
+            if (port & 0x8000) == 0 {
+                result &= self.keyboard[7];
+            } // A15
+
             // Bit 6 is for EAR, usually high.
             // Bits 5 and 7 are floating.
             return (result & 0x1F) | 0x40;
@@ -254,7 +278,12 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    pub fn new_with_options(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool) -> Self {
+    pub fn new_with_options(
+        enable_disassembler: bool,
+        enable_trace_interrupts: bool,
+        rom_filename: String,
+        run_zexall: bool,
+    ) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
             ram: [0; 0xC000],
@@ -264,7 +293,12 @@ impl MachineZxSpectrum48 {
             frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             keyboard: [0xFF; 8],
-            debugger: crate::debugger::Debugger::new(enable_disassembler, enable_trace_interrupts, run_zexall),
+            debugger: crate::debugger::Debugger::new(
+                enable_disassembler,
+                enable_trace_interrupts,
+                run_zexall,
+            ),
+            states_per_frame: 69888,
         };
         machine.load_rom(&rom_filename, run_zexall);
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
@@ -274,7 +308,7 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn load_rom(&mut self, rom_filename: &str, run_zexall: bool) {
-        if run_zexall  {
+        if run_zexall {
             self.load_zexall_test(rom_filename);
         } else {
             self.load_standard_rom(rom_filename);
@@ -287,11 +321,18 @@ impl MachineZxSpectrum48 {
                 self.rom.copy_from_slice(&rom);
                 println!("Loaded ROM from {}", rom_filename);
             } else {
-                println!("Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.", rom_filename, rom.len());
+                println!(
+                    "Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.",
+                    rom_filename,
+                    rom.len()
+                );
                 self.load_fallback_program();
             }
         } else {
-            println!("Error: Could not load ROM from {}. Using fallback program.", rom_filename);
+            println!(
+                "Error: Could not load ROM from {}. Using fallback program.",
+                rom_filename
+            );
             self.load_fallback_program();
         }
     }
@@ -315,7 +356,10 @@ impl MachineZxSpectrum48 {
             self.cpu.halted = false;
             self.cpu.int_requested = false;
         } else {
-            println!("Error: Could not load ZEXALL/ZEXCOM test ROM from {}. Using fallback program.", rom_name);
+            println!(
+                "Error: Could not load ZEXALL/ZEXCOM test ROM from {}. Using fallback program.",
+                rom_name
+            );
             self.load_fallback_program();
         }
     }
@@ -325,11 +369,11 @@ impl MachineZxSpectrum48 {
         // Simple test program to fill screen
         let code: &[u8] = &[
             0x21, 0x00, 0x40, // LD HL, 0x4000
-            0x34,             // INC (HL)
-            0x23,             // INC HL
-            0x7C,             // LD A, H
-            0xFE, 0x58,       // CP 0x58
-            0x20, 0xF7,       // JR NZ, -9 (to 0x34)
+            0x34, // INC (HL)
+            0x23, // INC HL
+            0x7C, // LD A, H
+            0xFE, 0x58, // CP 0x58
+            0x20, 0xF7, // JR NZ, -9 (to 0x34)
             0xC3, 0x00, 0x00, // JP 0x0000
         ];
         for (i, &b) in code.iter().enumerate() {
@@ -346,37 +390,52 @@ impl MachineZxSpectrum48 {
         let mut i = 0;
         // First pass: look for a standard CODE block with a header
         while i < tap_bytes.len() {
-            if i + 2 > tap_bytes.len() { break; }
+            if i + 2 > tap_bytes.len() {
+                break;
+            }
             let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
             i += 2;
-            
-            if i + block_len > tap_bytes.len() { break; }
+
+            if i + block_len > tap_bytes.len() {
+                break;
+            }
             let block = &tap_bytes[i..i + block_len];
             i += block_len;
 
-            if block_len > 18 && block[0] == 0x00 && block[1] == 3 { // Header, Type 3: Code
+            if block_len > 18 && block[0] == 0x00 && block[1] == 3 {
+                // Header, Type 3: Code
                 let data_len_in_header = u16::from_le_bytes([block[12], block[13]]);
                 let start_address = u16::from_le_bytes([block[14], block[15]]);
-                
-                if i >= tap_bytes.len() { continue; }
 
-                if i + 2 > tap_bytes.len() { break; }
+                if i >= tap_bytes.len() {
+                    continue;
+                }
+
+                if i + 2 > tap_bytes.len() {
+                    break;
+                }
                 let data_block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
-                
-                if i + 2 + data_block_len > tap_bytes.len() { break; }
-                let data_block = &tap_bytes[i + 2 .. i + 2 + data_block_len];
+
+                if i + 2 + data_block_len > tap_bytes.len() {
+                    break;
+                }
+                let data_block = &tap_bytes[i + 2..i + 2 + data_block_len];
 
                 if !data_block.is_empty() && data_block[0] == 0xFF {
                     let code_data = &data_block[1..data_block.len() - 1];
                     if code_data.len() != data_len_in_header as usize {
                         println!("Warning: TAP block header length ({}) differs from actual data length ({}).", data_len_in_header, code_data.len());
                     }
-                    
-                    println!("Loading {} bytes to 0x{:04X}", code_data.len(), start_address);
+
+                    println!(
+                        "Loading {} bytes to 0x{:04X}",
+                        code_data.len(),
+                        start_address
+                    );
                     for (offset, byte) in code_data.iter().enumerate() {
                         self.write_byte(start_address + offset as u16, *byte);
                     }
-                    
+
                     let di_halt = [0xF3, 0x76];
                     self.write_byte(0x5B00, di_halt[0]);
                     self.write_byte(0x5B01, di_halt[1]);
@@ -389,20 +448,25 @@ impl MachineZxSpectrum48 {
                 }
             }
         }
-        
+
         // Second pass: if no code block was found, look for a raw screen dump
         i = 0;
         while i < tap_bytes.len() {
-            if i + 2 > tap_bytes.len() { break; }
+            if i + 2 > tap_bytes.len() {
+                break;
+            }
             let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
             i += 2;
-            
-            if i + block_len > tap_bytes.len() { break; }
+
+            if i + block_len > tap_bytes.len() {
+                break;
+            }
             let block = &tap_bytes[i..i + block_len];
             i += block_len;
 
-            if block_len > 2 && block[0] == 0xFF { // Data block
-                let data = &block[1..block.len()-1];
+            if block_len > 2 && block[0] == 0xFF {
+                // Data block
+                let data = &block[1..block.len() - 1];
                 if data.len() == 6912 {
                     println!("Detected screen data (6912 bytes). Loading to 0x4000.");
                     for (offset, byte) in data.iter().enumerate() {
@@ -425,19 +489,39 @@ impl MachineZxSpectrum48 {
         Err("No CODE or 6912-byte data block found in tap file.".to_string())
     }
 
+    pub fn run_until_frame_without_ula(&mut self) {
+        self.frame_ready = false;
+        while !self.frame_ready {
+            // Execute one CPU instruction
+            let t_states = unsafe {
+                let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
+                self.cpu.step(bus, &mut self.debugger)
+            };
+
+            self.t_states += t_states;
+
+            for _ in 0..(self.t_states / self.states_per_frame) {
+                self.frame_ready = true;
+                self.cpu.raise_int();
+            }
+
+            self.t_states %= self.states_per_frame;
+        }
+    }
+
     pub fn run_until_frame(&mut self) {
         self.frame_ready = false;
 
         while !self.frame_ready {
             // Execute one CPU instruction
             let t_states = unsafe {
-
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
 
                 self.cpu.step(bus, &mut self.debugger)
             };
             for _ in 0..t_states {
-                self.ula.tick(&self.memory);
+                let memory = unsafe { &*(self as *const MachineZxSpectrum48 as *const dyn Memory) };
+                self.ula.tick(memory);
                 self.t_states += 1;
 
                 if self.t_states == 69888 {
@@ -450,4 +534,3 @@ impl MachineZxSpectrum48 {
         }
     }
 }
-

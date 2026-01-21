@@ -4,14 +4,14 @@ mod emulator;
 mod screen;
 
 use eframe::egui::{self, CentralPanel};
-use emulator::{MachineZxSpectrum48, Key};
+use emulator::{Key, MachineZxSpectrum48};
 use screen::draw_screen;
 use std::collections::VecDeque;
 
 fn main() -> Result<(), eframe::Error> {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    
+
     // Check for help flag
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         println!("ZX Spectrum Emulator");
@@ -25,7 +25,9 @@ fn main() -> Result<(), eframe::Error> {
         println!("  --run-zexcom      Run ZEXCOM instruction set exerciser test");
         println!("  --max-speed       Disable frame rate limiting for maximum speed");
         println!("  --show-fps        Display current FPS in the top-left corner");
-        println!("  --no-ui           Run in headless mode for maximum performance (e.g., for tests)");
+        println!(
+            "  --no-ui           Run in headless mode for maximum performance (e.g., for tests)"
+        );
         println!("  --help, -h        Show this help message");
         println!();
         println!("Examples:");
@@ -39,7 +41,7 @@ fn main() -> Result<(), eframe::Error> {
         println!("  {} --show-fps     Show FPS counter", args[0]);
         std::process::exit(0);
     }
-    
+
     let enable_disassembler = args.contains(&"--disasm".to_string());
     let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
     let run_zexall = args.contains(&"--run-zexall".to_string());
@@ -47,7 +49,7 @@ fn main() -> Result<(), eframe::Error> {
     let max_speed = args.contains(&"--max-speed".to_string());
     let show_fps = args.contains(&"--show-fps".to_string());
     let no_ui = args.contains(&"--no-ui".to_string());
-    
+
     // Parse ROM filename
     let mut rom_filename = "roms/48.rom".to_string();
     if run_zexall {
@@ -63,16 +65,30 @@ fn main() -> Result<(), eframe::Error> {
     }
 
     if no_ui {
-        let mut emulator = MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall || run_zexcom);
+        let mut emulator = MachineZxSpectrum48::new_with_options(
+            enable_disassembler,
+            enable_trace_interrupts,
+            rom_filename,
+            run_zexall || run_zexcom,
+        );
         loop {
-            emulator.run_until_frame();
+            emulator.run_until_frame_without_ula();
         }
     } else {
         let options = eframe::NativeOptions::default();
         eframe::run_native(
             "ZX Spectrum Emulator",
             options,
-            Box::new(move |_cc| Box::new(MyApp::new(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall || run_zexcom, max_speed, show_fps))),
+            Box::new(move |_cc| {
+                Box::new(MyApp::new(
+                    enable_disassembler,
+                    enable_trace_interrupts,
+                    rom_filename,
+                    run_zexall || run_zexcom,
+                    max_speed,
+                    show_fps,
+                ))
+            }),
         )
     }
 }
@@ -95,14 +111,44 @@ impl MyApp {
             self.emulator.set_key_state(Key::Sym, i.modifiers.ctrl);
 
             let keys = [
-                (egui::Key::Z, Key::Z), (egui::Key::X, Key::X), (egui::Key::C, Key::C), (egui::Key::V, Key::V),
-                (egui::Key::A, Key::A), (egui::Key::S, Key::S), (egui::Key::D, Key::D), (egui::Key::F, Key::F), (egui::Key::G, Key::G),
-                (egui::Key::Q, Key::Q), (egui::Key::W, Key::W), (egui::Key::E, Key::E), (egui::Key::R, Key::R), (egui::Key::T, Key::T),
-                (egui::Key::Num1, Key::Num1), (egui::Key::Num2, Key::Num2), (egui::Key::Num3, Key::Num3), (egui::Key::Num4, Key::Num4), (egui::Key::Num5, Key::Num5),
-                (egui::Key::Num0, Key::Num0), (egui::Key::Num9, Key::Num9), (egui::Key::Num8, Key::Num8), (egui::Key::Num7, Key::Num7), (egui::Key::Num6, Key::Num6),
-                (egui::Key::P, Key::P), (egui::Key::O, Key::O), (egui::Key::I, Key::I), (egui::Key::U, Key::U), (egui::Key::Y, Key::Y),
-                (egui::Key::Enter, Key::Enter), (egui::Key::L, Key::L), (egui::Key::K, Key::K), (egui::Key::J, Key::J), (egui::Key::H, Key::H),
-                (egui::Key::Space, Key::Space), (egui::Key::M, Key::M), (egui::Key::N, Key::N), (egui::Key::B, Key::B),
+                (egui::Key::Z, Key::Z),
+                (egui::Key::X, Key::X),
+                (egui::Key::C, Key::C),
+                (egui::Key::V, Key::V),
+                (egui::Key::A, Key::A),
+                (egui::Key::S, Key::S),
+                (egui::Key::D, Key::D),
+                (egui::Key::F, Key::F),
+                (egui::Key::G, Key::G),
+                (egui::Key::Q, Key::Q),
+                (egui::Key::W, Key::W),
+                (egui::Key::E, Key::E),
+                (egui::Key::R, Key::R),
+                (egui::Key::T, Key::T),
+                (egui::Key::Num1, Key::Num1),
+                (egui::Key::Num2, Key::Num2),
+                (egui::Key::Num3, Key::Num3),
+                (egui::Key::Num4, Key::Num4),
+                (egui::Key::Num5, Key::Num5),
+                (egui::Key::Num0, Key::Num0),
+                (egui::Key::Num9, Key::Num9),
+                (egui::Key::Num8, Key::Num8),
+                (egui::Key::Num7, Key::Num7),
+                (egui::Key::Num6, Key::Num6),
+                (egui::Key::P, Key::P),
+                (egui::Key::O, Key::O),
+                (egui::Key::I, Key::I),
+                (egui::Key::U, Key::U),
+                (egui::Key::Y, Key::Y),
+                (egui::Key::Enter, Key::Enter),
+                (egui::Key::L, Key::L),
+                (egui::Key::K, Key::K),
+                (egui::Key::J, Key::J),
+                (egui::Key::H, Key::H),
+                (egui::Key::Space, Key::Space),
+                (egui::Key::M, Key::M),
+                (egui::Key::N, Key::N),
+                (egui::Key::B, Key::B),
             ];
 
             for (egui_key, zx_key) in keys.iter() {
@@ -113,10 +159,22 @@ impl MyApp {
 }
 
 impl MyApp {
-    fn new(enable_disassembler: bool, enable_trace_interrupts: bool, rom_filename: String, run_zexall: bool, max_speed: bool, show_fps: bool) -> Self {
+    fn new(
+        enable_disassembler: bool,
+        enable_trace_interrupts: bool,
+        rom_filename: String,
+        run_zexall: bool,
+        max_speed: bool,
+        show_fps: bool,
+    ) -> Self {
         let now = std::time::Instant::now();
         Self {
-            emulator: MachineZxSpectrum48::new_with_options(enable_disassembler, enable_trace_interrupts, rom_filename, run_zexall),
+            emulator: MachineZxSpectrum48::new_with_options(
+                enable_disassembler,
+                enable_trace_interrupts,
+                rom_filename,
+                run_zexall,
+            ),
             last_frame_generation_start_time: now,
             max_speed,
             show_fps,
@@ -150,21 +208,31 @@ impl eframe::App for MyApp {
                 self.emulator.run_until_frame();
                 self.emulated_frames_this_second += 1;
             }
-        } else if time_since_last.as_millis() >= 20 { // ~50Hz (20ms)
+        } else if time_since_last.as_millis() >= 20 {
+            // ~50Hz (20ms)
             self.last_frame_generation_start_time = now;
             self.emulator.run_until_frame();
             self.emulated_frames_this_second += 1;
         }
 
         CentralPanel::default().show(ctx, |ui| {
-            draw_screen(ui, &self.emulator.screen_buffer, emulator::FULL_WIDTH, emulator::FULL_HEIGHT);
+            draw_screen(
+                ui,
+                &self.emulator.screen_buffer,
+                emulator::FULL_WIDTH,
+                emulator::FULL_HEIGHT,
+            );
         });
 
         if self.show_fps {
             self.frame_times.push_back(now);
             // Keep only frame times within the last second
             let one_second_ago = now - std::time::Duration::from_secs(1);
-            while self.frame_times.front().map_or(false, |&t| t < one_second_ago) {
+            while self
+                .frame_times
+                .front()
+                .map_or(false, |&t| t < one_second_ago)
+            {
                 self.frame_times.pop_front();
             }
             let fps = self.frame_times.len();
@@ -182,8 +250,14 @@ impl eframe::App for MyApp {
                         .fill(egui::Color32::BLACK)
                         .inner_margin(egui::Margin::symmetric(5.0, 2.0))
                         .show(ui, |ui| {
-                            ui.label(egui::RichText::new(format!("FPS: {}", fps)).color(egui::Color32::WHITE));
-                            ui.label(egui::RichText::new(format!("Emulated FPS: {}", self.emulated_fps)).color(egui::Color32::WHITE));
+                            ui.label(
+                                egui::RichText::new(format!("FPS: {}", fps))
+                                    .color(egui::Color32::WHITE),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("Emulated FPS: {}", self.emulated_fps))
+                                    .color(egui::Color32::WHITE),
+                            );
                         });
                 });
         }

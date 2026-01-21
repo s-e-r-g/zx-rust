@@ -2,29 +2,28 @@
 //!
 //! This module implements a complete Z80 CPU emulator with full instruction set support.
 
-
 use core::panic;
 
 use std::io::{self, Write};
 
-use crate::emulator::{Bus, Memory};
 use crate::debugger::Debugger;
+use crate::emulator::{Bus, Memory};
 
 // Z80 CPU Flag register bits
-const F_S: u8 = 0x80;   // Sign flag
-const F_Z: u8 = 0x40;   // Zero flag
-const F_Y: u8 = 0x20;   // Undocumented flag (bit 5 of result)
-const F_H: u8 = 0x10;   // Half-carry flag
-const F_X: u8 = 0x08;   // Undocumented flag (bit 3 of result)
-const F_PV: u8 = 0x04;  // Parity/Overflow flag
-const F_N: u8 = 0x02;   // Subtract flag
-const F_C: u8 = 0x01;   // Carry flag
+const F_S: u8 = 0x80; // Sign flag
+const F_Z: u8 = 0x40; // Zero flag
+const F_Y: u8 = 0x20; // Undocumented flag (bit 5 of result)
+const F_H: u8 = 0x10; // Half-carry flag
+const F_X: u8 = 0x08; // Undocumented flag (bit 3 of result)
+const F_PV: u8 = 0x04; // Parity/Overflow flag
+const F_N: u8 = 0x02; // Subtract flag
+const F_C: u8 = 0x01; // Carry flag
 
 #[derive(Clone)]
 pub enum InterruptMode {
     IM0,
     IM1,
-    IM2
+    IM2,
 }
 
 pub struct Z80 {
@@ -74,18 +73,28 @@ pub struct Z80 {
 impl Z80 {
     pub fn new() -> Self {
         Self {
-            a: 0xff, f: 0xff,
-            b: 0, c: 0,
-            d: 0, e: 0,
-            h: 0, l: 0,
-            a_alt: 0xff, f_alt: 0xff,
-            b_alt: 0, c_alt: 0,
-            d_alt: 0, e_alt: 0,
-            h_alt: 0, l_alt: 0,
+            a: 0xff,
+            f: 0xff,
+            b: 0,
+            c: 0,
+            d: 0,
+            e: 0,
+            h: 0,
+            l: 0,
+            a_alt: 0xff,
+            f_alt: 0xff,
+            b_alt: 0,
+            c_alt: 0,
+            d_alt: 0,
+            e_alt: 0,
+            h_alt: 0,
+            l_alt: 0,
             sp: 0xffff,
             pc: 0,
-            ix: 0, iy: 0,
-            i: 0, r: 0,
+            ix: 0,
+            iy: 0,
+            i: 0,
+            r: 0,
             iff1: false,
             iff2: false,
             im: InterruptMode::IM0,
@@ -159,17 +168,37 @@ impl Z80 {
         }
     }
 
-    fn get_bc(&self) -> u16 { (self.b as u16) << 8 | self.c as u16 }
-    fn set_bc(&mut self, val: u16) { self.b = (val >> 8) as u8; self.c = val as u8; }
+    fn get_bc(&self) -> u16 {
+        (self.b as u16) << 8 | self.c as u16
+    }
+    fn set_bc(&mut self, val: u16) {
+        self.b = (val >> 8) as u8;
+        self.c = val as u8;
+    }
 
-    fn get_de(&self) -> u16 { (self.d as u16) << 8 | self.e as u16 }
-    fn set_de(&mut self, val: u16) { self.d = (val >> 8) as u8; self.e = val as u8; }
+    fn get_de(&self) -> u16 {
+        (self.d as u16) << 8 | self.e as u16
+    }
+    fn set_de(&mut self, val: u16) {
+        self.d = (val >> 8) as u8;
+        self.e = val as u8;
+    }
 
-    fn get_hl(&self) -> u16 { (self.h as u16) << 8 | self.l as u16 }
-    fn set_hl(&mut self, val: u16) { self.h = (val >> 8) as u8; self.l = val as u8; }
+    fn get_hl(&self) -> u16 {
+        (self.h as u16) << 8 | self.l as u16
+    }
+    fn set_hl(&mut self, val: u16) {
+        self.h = (val >> 8) as u8;
+        self.l = val as u8;
+    }
 
-    fn get_af(&self) -> u16 { (self.a as u16) << 8 | self.f as u16 }
-    fn set_af(&mut self, val: u16) { self.a = (val >> 8) as u8; self.f = val as u8; }
+    fn get_af(&self) -> u16 {
+        (self.a as u16) << 8 | self.f as u16
+    }
+    fn set_af(&mut self, val: u16) {
+        self.a = (val >> 8) as u8;
+        self.f = val as u8;
+    }
 
     fn parity(v: u8) -> bool {
         v.count_ones() % 2 == 0
@@ -244,15 +273,25 @@ impl Z80 {
         }
     }
 
-    fn set_all_flags(&mut self, s: bool, z: bool, y: bool, h: bool, x: bool, pv: bool, n: bool, c: bool) {
-        self.f = (if s { F_S } else { 0 }) |
-                 (if z { F_Z } else { 0 }) |
-                 (if y { F_Y } else { 0 }) |
-                 (if h { F_H } else { 0 }) |
-                 (if x { F_X } else { 0 }) |
-                 (if pv { F_PV } else { 0 }) |
-                 (if n { F_N } else { 0 }) |
-                 (if c { F_C } else { 0 });
+    fn set_all_flags(
+        &mut self,
+        s: bool,
+        z: bool,
+        y: bool,
+        h: bool,
+        x: bool,
+        pv: bool,
+        n: bool,
+        c: bool,
+    ) {
+        self.f = (if s { F_S } else { 0 })
+            | (if z { F_Z } else { 0 })
+            | (if y { F_Y } else { 0 })
+            | (if h { F_H } else { 0 })
+            | (if x { F_X } else { 0 })
+            | (if pv { F_PV } else { 0 })
+            | (if n { F_N } else { 0 })
+            | (if c { F_C } else { 0 });
     }
 
     fn set_flags_add(&mut self, a: u8, b: u8, result: u16) {
@@ -319,7 +358,7 @@ impl Z80 {
     fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32) {
         // flgs s, z, pv are unaffected
         self.set_flag_n(false); // N flag is always reset for ADD
-        // c flag is set if carry from bit 15; otherwise, it is reset.
+                                // c flag is set if carry from bit 15; otherwise, it is reset.
         self.set_flag_c((result & 0x10000) != 0);
         // h flag is set if carry from bit 11; otherwise, it is reset.
         self.set_flag_h(((op1 ^ op2 ^ result as u16) & 0x1000) != 0);
@@ -435,11 +474,13 @@ impl Z80 {
     }
 
     pub fn step(&mut self, bus: &mut dyn Bus, debugger: &mut Debugger) -> u32 {
-
         let current_pc = self.pc;
 
         if debugger.enable_disassembler {
-            debugger.trace_instruction(bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.ix, self.iy, self.i, self.r);
+            debugger.trace_instruction(
+                bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l,
+                self.sp, self.ix, self.iy, self.i, self.r,
+            );
         }
 
         if debugger.enable_zexall_test {
@@ -447,8 +488,7 @@ impl Z80 {
                 if self.c == 2 {
                     print!("{}", self.e as char);
                     io::stdout().flush().unwrap();
-                }
-                else if self.c == 9 {
+                } else if self.c == 9 {
                     // print string until '$'
                     let mut addr = (self.d as u16) << 8 | self.e as u16;
                     loop {
@@ -463,8 +503,7 @@ impl Z80 {
                         addr = addr.wrapping_add(1);
                     }
                 }
-            }
-            else if current_pc == 0 {
+            } else if current_pc == 0 {
                 std::process::exit(0);
             }
         }
@@ -484,8 +523,10 @@ impl Z80 {
                     InterruptMode::IM1 => "IM1",
                     InterruptMode::IM2 => "IM2",
                 };
-                println!("INTERRUPT: Requested at PC={:04X}, IFF1={}, IFF2={}, IM={}, Halted={}",
-                    self.pc, self.iff1, self.iff2, im_mode, self.halted);
+                println!(
+                    "INTERRUPT: Requested at PC={:04X}, IFF1={}, IFF2={}, IM={}, Halted={}",
+                    self.pc, self.iff1, self.iff2, im_mode, self.halted
+                );
                 println!("INTERRUPT: Registers - A:{:02X} F:{:02X} BC:{:04X} DE:{:04X} HL:{:04X} SP:{:04X} IX:{:04X} IY:{:04X}",
                     self.a, self.f, self.get_bc(), self.get_de(), self.get_hl(), self.sp, self.ix, self.iy);
             }
@@ -509,12 +550,16 @@ impl Z80 {
                     return 13; // T-states for interrupt handling
                 }
                 InterruptMode::IM2 => {
-                    let data_on_the_bus: u8= 0xFF; // TODO: Assume data bus returns 0xFF and spec is correct
-                    let addr = (self.i as u16) << 8 | (data_on_the_bus & 0xFE) as u16 ; // LSB is ignored
-                    let vector_addr = bus.read_byte(addr) as u16 + ((bus.read_byte(addr.wrapping_add(1)) as u16) << 8);
+                    let data_on_the_bus: u8 = 0xFF; // TODO: Assume data bus returns 0xFF and spec is correct
+                    let addr = (self.i as u16) << 8 | (data_on_the_bus & 0xFE) as u16; // LSB is ignored
+                    let vector_addr = bus.read_byte(addr) as u16
+                        + ((bus.read_byte(addr.wrapping_add(1)) as u16) << 8);
 
                     if debugger.enable_trace_interrupts {
-                        println!("INTERRUPT: Handling IM2 - Vector table at {:04X}, jumping to {:04X}", addr, vector_addr);
+                        println!(
+                            "INTERRUPT: Handling IM2 - Vector table at {:04X}, jumping to {:04X}",
+                            addr, vector_addr
+                        );
                     }
 
                     self.pc = vector_addr;
@@ -539,60 +584,70 @@ impl Z80 {
         self.r = (self.r & 0x80) | ((self.r + 1) & 0x7F);
 
         match opcode {
-            0x00 => { // NOP
+            0x00 => {
+                // NOP
                 // flags unchanged
                 4
             }
-            0x01 => { // LD BC, nn
+            0x01 => {
+                // LD BC, nn
                 let nn = self.read_word_pc(bus);
                 self.set_bc(nn);
                 // flags unchanged
                 10
             }
-            0x02 => { // LD (BC), A
+            0x02 => {
+                // LD (BC), A
                 bus.write_byte(self.get_bc(), self.a);
                 // flags unchanged
                 7
             }
-            0x03 => { // INC BC
+            0x03 => {
+                // INC BC
                 let bc = self.get_bc().wrapping_add(1);
                 self.set_bc(bc);
                 // flags unchanged
                 6
             }
-            0x04 => { // INC B
+            0x04 => {
+                // INC B
                 self.b = self.b.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.b);
                 4
             }
-            0x05 => { // DEC B
+            0x05 => {
+                // DEC B
                 self.b = self.b.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.b);
                 4
             }
-            0x06 => { // LD B, n
+            0x06 => {
+                // LD B, n
                 self.b = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x07 => { // RLCA
+            0x07 => {
+                // RLCA
                 let old_a = self.a;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
-                // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
+                                                      // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_c((old_a & 0x80) != 0);
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x08 => { // EX AF, AF'
+            0x08 => {
+                // EX AF, AF'
                 (self.a, self.f, self.a_alt, self.f_alt) = (self.a_alt, self.f_alt, self.a, self.f);
                 // flags exchanged above
                 4
             }
-            0x09 => { // ADD HL, BC
+            0x09 => {
+                // ADD HL, BC
                 let op1 = self.get_hl();
                 let op2 = self.get_bc();
                 let result = (op1 as u32) + (op2 as u32);
@@ -601,45 +656,52 @@ impl Z80 {
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
-            0x0A => { // LD A, (BC)
+            0x0A => {
+                // LD A, (BC)
                 self.a = bus.read_byte(self.get_bc());
                 // flags unchanged
                 7
             }
-            0x0B => { // DEC BC
+            0x0B => {
+                // DEC BC
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
                 // flags unchanged
                 6
             }
-            0x0C => { // INC C
+            0x0C => {
+                // INC C
                 self.c = self.c.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.c);
                 4
             }
-            0x0D => { // DEC C
+            0x0D => {
+                // DEC C
                 self.c = self.c.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.c);
                 4
             }
-            0x0E => { // LD C, n
+            0x0E => {
+                // LD C, n
                 self.c = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x0F => { // RRCA
+            0x0F => {
+                // RRCA
                 let old_a = self.a;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
-                // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
+                                                               // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_c((old_a & 0x01) != 0);
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x10 => { // DJNZ d
+            0x10 => {
+                // DJNZ d
                 let d = self.read_byte_pc(bus) as i8;
                 self.b = self.b.wrapping_sub(1);
                 if self.b != 0 {
@@ -650,41 +712,48 @@ impl Z80 {
                 }
                 // flags unchanged
             }
-            0x11 => { // LD DE, nn
+            0x11 => {
+                // LD DE, nn
                 let nn = self.read_word_pc(bus);
                 self.set_de(nn);
                 // flags unchanged
                 10
             }
-            0x12 => { // LD (DE), A
+            0x12 => {
+                // LD (DE), A
                 bus.write_byte(self.get_de(), self.a);
                 // flags unchanged
                 7
             }
-            0x13 => { // INC DE
+            0x13 => {
+                // INC DE
                 let de = self.get_de().wrapping_add(1);
                 self.set_de(de);
                 // flags unchanged
                 6
             }
-            0x14 => { // INC D
+            0x14 => {
+                // INC D
                 self.d = self.d.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.d);
                 4
             }
-            0x15 => { // DEC D
+            0x15 => {
+                // DEC D
                 self.d = self.d.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.d);
                 4
             }
-            0x16 => { // LD D, n
+            0x16 => {
+                // LD D, n
                 self.d = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x17 => { // RLA
+            0x17 => {
+                // RLA
                 let old_a = self.a;
                 let carry_out = (old_a & 0x80) != 0; // Carry is old bit 7
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
@@ -696,13 +765,15 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x18 => { // JR d
+            0x18 => {
+                // JR d
                 let d = self.read_byte_pc(bus) as i8;
                 self.pc = self.pc.wrapping_add(d as u16);
                 // flags unchanged
                 12
             }
-            0x19 => { // ADD HL, DE
+            0x19 => {
+                // ADD HL, DE
                 let op1 = self.get_hl();
                 let op2 = self.get_de();
                 let result = (op1 as u32) + (op2 as u32);
@@ -711,35 +782,41 @@ impl Z80 {
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
-            0x1A => { // LD A, (DE)
+            0x1A => {
+                // LD A, (DE)
                 self.a = bus.read_byte(self.get_de());
                 // flags unchanged
                 7
             }
-            0x1B => { // DEC DE
+            0x1B => {
+                // DEC DE
                 let de = self.get_de().wrapping_sub(1);
                 self.set_de(de);
                 // flags unchanged
                 6
             }
-            0x1C => { // INC E
+            0x1C => {
+                // INC E
                 self.e = self.e.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.e);
                 4
             }
-            0x1D => { // DEC E
+            0x1D => {
+                // DEC E
                 self.e = self.e.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.e);
                 4
             }
-            0x1E => { // LD E, n
+            0x1E => {
+                // LD E, n
                 self.e = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x1F => { // RRA
+            0x1F => {
+                // RRA
                 let old_a = self.a;
                 let carry_out = (old_a & 0x01) != 0; // Carry is old bit 0
                 let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
@@ -751,7 +828,8 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x20 => { // JR NZ, d
+            0x20 => {
+                // JR NZ, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_Z) == 0 {
                     self.pc = self.pc.wrapping_add(d as u16);
@@ -761,43 +839,50 @@ impl Z80 {
                 }
                 // flags unchanged
             }
-            0x21 => { // LD HL, nn
+            0x21 => {
+                // LD HL, nn
                 let nn = self.read_word_pc(bus);
                 self.set_hl(nn);
                 // flags unchanged
                 10
             }
-            0x22 => { // LD (nn), HL
+            0x22 => {
+                // LD (nn), HL
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.l);
                 bus.write_byte(nn.wrapping_add(1), self.h);
                 // flags unchanged
                 16
             }
-            0x23 => { // INC HL
+            0x23 => {
+                // INC HL
                 self.set_hl(self.get_hl().wrapping_add(1));
                 // flags unchanged
                 6
             }
-            0x24 => { // INC H
+            0x24 => {
+                // INC H
                 self.h = self.h.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.h);
                 4
             }
-            0x25 => { // DEC H
+            0x25 => {
+                // DEC H
                 self.h = self.h.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.h);
                 4
             }
-            0x26 => { // LD H, n
+            0x26 => {
+                // LD H, n
                 self.h = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
             // TODO: add test for DAA
-            0x27 => { // DAA
+            0x27 => {
+                // DAA
                 let mut correction = 0;
                 let n_flag = (self.f & F_N) != 0; // preserve N
 
@@ -823,7 +908,8 @@ impl Z80 {
                 self.set_flag_c(c_flag); // Set final C
                 4
             }
-            0x28 => { // JR Z, d
+            0x28 => {
+                // JR Z, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_Z) != 0 {
                     self.pc = self.pc.wrapping_add(d as u16);
@@ -833,7 +919,8 @@ impl Z80 {
                 }
                 // flags unchanged
             }
-            0x29 => { // ADD HL, HL
+            0x29 => {
+                // ADD HL, HL
                 let op1 = self.get_hl();
                 let op2 = op1;
                 let result = (op1 as u32) + (op2 as u32);
@@ -842,36 +929,42 @@ impl Z80 {
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
-            0x2A => { // LD HL, (nn)
+            0x2A => {
+                // LD HL, (nn)
                 let nn = self.read_word_pc(bus);
                 self.l = bus.read_byte(nn);
                 self.h = bus.read_byte(nn.wrapping_add(1));
                 // flags unchanged
                 16
             }
-            0x2B => { // DEC HL
+            0x2B => {
+                // DEC HL
                 self.set_hl(self.get_hl().wrapping_sub(1));
                 // flags unchanged
                 6
             }
-            0x2C => { // INC L
+            0x2C => {
+                // INC L
                 self.l = self.l.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.l);
                 4
             }
-            0x2D => { // DEC L
+            0x2D => {
+                // DEC L
                 self.l = self.l.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.l);
                 4
             }
-            0x2E => { // LD L, n
+            0x2E => {
+                // LD L, n
                 self.l = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x2F => { // CPL
+            0x2F => {
+                // CPL
                 self.a = !self.a;
                 // flags
                 self.set_flag_h(true);
@@ -879,7 +972,8 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x30 => { // JR NC, d
+            0x30 => {
+                // JR NC, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_C) == 0 {
                     self.pc = self.pc.wrapping_add(d as u16);
@@ -889,23 +983,27 @@ impl Z80 {
                 }
                 // flags unchanged
             }
-            0x31 => { // LD SP, nn
+            0x31 => {
+                // LD SP, nn
                 self.sp = self.read_word_pc(bus);
                 // flags unchanged
                 10
             }
-            0x32 => { // LD (nn), A
+            0x32 => {
+                // LD (nn), A
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.a);
                 // flags unchanged
                 13
             }
-            0x33 => { // INC SP
+            0x33 => {
+                // INC SP
                 self.sp = self.sp.wrapping_add(1);
                 // flags unchanged
                 6
             }
-            0x34 => { // INC (HL)
+            0x34 => {
+                // INC (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_add(1);
@@ -914,7 +1012,8 @@ impl Z80 {
                 self.set_flags_inc_r8(res);
                 11
             }
-            0x35 => { // DEC (HL)
+            0x35 => {
+                // DEC (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let res = val.wrapping_sub(1);
@@ -923,13 +1022,15 @@ impl Z80 {
                 self.set_flags_dec_r8(res);
                 11
             }
-            0x36 => { // LD (HL), n
+            0x36 => {
+                // LD (HL), n
                 let n = self.read_byte_pc(bus);
                 bus.write_byte(self.get_hl(), n);
                 // flags unchanged
                 10
             }
-            0x37 => { // SCF
+            0x37 => {
+                // SCF
                 // flags only
                 self.set_flag_c(true);
                 self.set_flag_h(false);
@@ -937,7 +1038,8 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x38 => { // JR C, d
+            0x38 => {
+                // JR C, d
                 let d = self.read_byte_pc(bus) as i8;
                 if (self.f & F_C) != 0 {
                     self.pc = self.pc.wrapping_add(d as u16);
@@ -947,7 +1049,8 @@ impl Z80 {
                 }
                 // flags unchanged
             }
-            0x39 => { // ADD HL, SP
+            0x39 => {
+                // ADD HL, SP
                 let op1 = self.get_hl();
                 let op2 = self.sp;
                 let result = (op1 as u32) + (op2 as u32);
@@ -956,35 +1059,41 @@ impl Z80 {
                 self.set_hl_flags_add(op1, op2, result);
                 11
             }
-            0x3A => { // LD A, (nn)
+            0x3A => {
+                // LD A, (nn)
                 let nn = self.read_word_pc(bus);
                 self.a = bus.read_byte(nn);
                 // flags unchanged
                 13
             }
-            0x3B => { // DEC SP
+            0x3B => {
+                // DEC SP
                 self.sp = self.sp.wrapping_sub(1);
                 // flags unchanged
                 6
             }
-            0x3C => { // INC A
+            0x3C => {
+                // INC A
                 self.a = self.a.wrapping_add(1);
                 // flags
                 self.set_flags_inc_r8(self.a);
                 4
             }
-            0x3D => { // DEC A
+            0x3D => {
+                // DEC A
                 self.a = self.a.wrapping_sub(1);
                 // flags
                 self.set_flags_dec_r8(self.a);
                 4
             }
-            0x3E => { // LD A, n
+            0x3E => {
+                // LD A, n
                 self.a = self.read_byte_pc(bus);
                 // flags unchanged
                 7
             }
-            0x3F => { // CCF
+            0x3F => {
+                // CCF
                 // flags only. s, z, pv unchanged. H = old C, N = 0, C = !old C. X,Y from new A.
                 let old_carry = (self.f & F_C) != 0;
                 self.set_flag_c(!old_carry);
@@ -993,616 +1102,745 @@ impl Z80 {
                 self.set_flags_xy_from_result(self.a);
                 4
             }
-            0x40 => { // LD B, B
+            0x40 => {
+                // LD B, B
                 // flags unchanged
                 4
             }
-            0x41 => { // LD B, C
+            0x41 => {
+                // LD B, C
                 self.b = self.c;
                 // flags unchanged
                 4
             }
-            0x42 => { // LD B, D
+            0x42 => {
+                // LD B, D
                 self.b = self.d;
                 // flags unchanged
                 4
             }
-            0x43 => { // LD B, E
+            0x43 => {
+                // LD B, E
                 self.b = self.e;
                 // flags unchanged
                 4
             }
-            0x44 => { // LD B, H
+            0x44 => {
+                // LD B, H
                 // flags unchanged
                 self.b = self.h;
                 4
             }
-            0x45 => { // LD B, L
+            0x45 => {
+                // LD B, L
                 // flags unchanged
                 self.b = self.l;
                 4
             }
-            0x46 => { // LD B, (HL)
+            0x46 => {
+                // LD B, (HL)
                 self.b = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x47 => { // LD B, A
+            0x47 => {
+                // LD B, A
                 self.b = self.a;
                 // flags unchanged
                 4
             }
-            0x48 => { // LD C, B
+            0x48 => {
+                // LD C, B
                 self.c = self.b;
                 // flags unchanged
                 4
             }
-            0x49 => { // LD C, C
+            0x49 => {
+                // LD C, C
                 // flags unchanged
                 4
             }
-            0x4A => { // LD C, D
+            0x4A => {
+                // LD C, D
                 // flags unchanged
                 self.c = self.d;
                 4
             }
-            0x4B => { // LD C, E
+            0x4B => {
+                // LD C, E
                 // flags unchanged
                 self.c = self.e;
                 4
             }
-            0x4C => { // LD C, H
+            0x4C => {
+                // LD C, H
                 // flags unchanged
                 self.c = self.h;
                 4
             }
-            0x4D => { // LD C, L
+            0x4D => {
+                // LD C, L
                 // flags unchanged
                 self.c = self.l;
                 4
             }
-            0x4E => { // LD C, (HL)
+            0x4E => {
+                // LD C, (HL)
                 self.c = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x4F => { // LD C, A
+            0x4F => {
+                // LD C, A
                 self.c = self.a;
                 // flags unchanged
                 4
             }
-            0x50 => { // LD D, B
+            0x50 => {
+                // LD D, B
                 self.d = self.b;
                 // flags unchanged
                 4
             }
-            0x51 => { // LD D, C
+            0x51 => {
+                // LD D, C
                 self.d = self.c;
                 // flags unchanged
                 4
             }
-            0x52 => { // LD D, D
+            0x52 => {
+                // LD D, D
                 // flags unchanged
                 4
             }
-            0x53 => { // LD D, E
+            0x53 => {
+                // LD D, E
                 self.d = self.e;
                 // flags unchanged
                 4
             }
-            0x54 => { // LD D, H
+            0x54 => {
+                // LD D, H
                 self.d = self.h;
                 // flags unchanged
                 4
             }
-            0x55 => { // LD D, L
+            0x55 => {
+                // LD D, L
                 self.d = self.l;
                 // flags unchanged
                 4
             }
-            0x56 => { // LD D, (HL)
+            0x56 => {
+                // LD D, (HL)
                 self.d = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x57 => { // LD D, A
+            0x57 => {
+                // LD D, A
                 self.d = self.a;
                 // flags unchanged
                 4
             }
-            0x58 => { // LD E, B
+            0x58 => {
+                // LD E, B
                 self.e = self.b;
                 // flags unchanged
                 4
             }
-            0x59 => { // LD E, C
+            0x59 => {
+                // LD E, C
                 self.e = self.c;
                 // flags unchanged
                 4
             }
-            0x5A => { // LD E, D
+            0x5A => {
+                // LD E, D
                 self.e = self.d;
                 // flags unchanged
                 4
             }
-            0x5B => { // LD E, E
+            0x5B => {
+                // LD E, E
                 // flags unchanged
                 4
             }
-            0x5C => { // LD E, H
+            0x5C => {
+                // LD E, H
                 self.e = self.h;
                 // flags unchanged
                 4
             }
-            0x5D => { // LD E, L
+            0x5D => {
+                // LD E, L
                 self.e = self.l;
                 // flags unchanged
                 4
             }
-            0x5E => { // LD E, (HL)
+            0x5E => {
+                // LD E, (HL)
                 self.e = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x5F => { // LD E, A
+            0x5F => {
+                // LD E, A
                 self.e = self.a;
                 // flags unchanged
                 4
             }
-            0x60 => { // LD H, B
+            0x60 => {
+                // LD H, B
                 self.h = self.b;
                 // flags unchanged
                 4
             }
-            0x61 => { // LD H, C
+            0x61 => {
+                // LD H, C
                 self.h = self.c;
                 // flags unchanged
                 4
             }
-            0x62 => { // LD H, D
+            0x62 => {
+                // LD H, D
                 self.h = self.d;
                 // flags unchanged
                 4
             }
-            0x63 => { // LD H, E
+            0x63 => {
+                // LD H, E
                 self.h = self.e;
                 // flags unchanged
                 4
             }
-            0x64 => { // LD H, H
+            0x64 => {
+                // LD H, H
                 //
                 4
             }
-            0x65 => { // LD H, L
+            0x65 => {
+                // LD H, L
                 self.h = self.l;
                 // flags unchanged
                 4
             }
-            0x66 => { // LD H, (HL)
+            0x66 => {
+                // LD H, (HL)
                 self.h = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x67 => { // LD H, A
+            0x67 => {
+                // LD H, A
                 self.h = self.a;
                 // flags unchanged
                 4
             }
-            0x68 => { // LD L, B
+            0x68 => {
+                // LD L, B
                 self.l = self.b;
                 // flags unchanged
                 4
             }
-            0x69 => { // LD L, C
+            0x69 => {
+                // LD L, C
                 self.l = self.c;
                 // flags unchanged
                 4
             }
-            0x6A => { // LD L, D
+            0x6A => {
+                // LD L, D
                 self.l = self.d;
                 // flags unchanged
                 4
             }
-            0x6B => { // LD L, E
+            0x6B => {
+                // LD L, E
                 self.l = self.e;
                 // flags unchanged
                 4
             }
-            0x6C => { // LD L, H
+            0x6C => {
+                // LD L, H
                 self.l = self.h;
                 // flags unchanged
                 4
             }
-            0x6D => { // LD L, L
+            0x6D => {
+                // LD L, L
                 // flags unchanged
                 4
             }
-            0x6E => { // LD L, (HL)
+            0x6E => {
+                // LD L, (HL)
                 self.l = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x6F => { // LD L, A
+            0x6F => {
+                // LD L, A
                 self.l = self.a;
                 // flags unchanged
                 4
             }
-            0x70 => { // LD (HL), B
+            0x70 => {
+                // LD (HL), B
                 bus.write_byte(self.get_hl(), self.b);
                 // flags unchanged
                 7
             }
-            0x71 => { // LD (HL), C
+            0x71 => {
+                // LD (HL), C
                 bus.write_byte(self.get_hl(), self.c);
                 // flags unchanged
                 7
             }
-            0x72 => { // LD (HL), D
+            0x72 => {
+                // LD (HL), D
                 bus.write_byte(self.get_hl(), self.d);
                 // flags unchanged
                 7
             }
-            0x73 => { // LD (HL), E
+            0x73 => {
+                // LD (HL), E
                 bus.write_byte(self.get_hl(), self.e);
                 // flags unchanged
                 7
             }
-            0x74 => { // LD (HL), H
+            0x74 => {
+                // LD (HL), H
                 bus.write_byte(self.get_hl(), self.h);
                 // flags unchanged
                 7
             }
-            0x75 => { // LD (HL), L
+            0x75 => {
+                // LD (HL), L
                 bus.write_byte(self.get_hl(), self.l);
                 // flags unchanged
                 7
             }
-            0x76 => { // HALT
+            0x76 => {
+                // HALT
                 self.halted = true;
                 // flags unchanged
                 4
             }
-            0x77 => { // LD (HL), A
+            0x77 => {
+                // LD (HL), A
                 bus.write_byte(self.get_hl(), self.a);
                 // flags unchanged
                 7
             }
-            0x78 => { // LD A, B
+            0x78 => {
+                // LD A, B
                 self.a = self.b;
                 // flags unchanged
                 4
             }
-            0x79 => { // LD A, C
+            0x79 => {
+                // LD A, C
                 self.a = self.c;
                 // flags unchanged
                 4
             }
-            0x7A => { // LD A, D
+            0x7A => {
+                // LD A, D
                 self.a = self.d;
                 // flags unchanged
                 4
             }
-            0x7B => { // LD A, E
+            0x7B => {
+                // LD A, E
                 self.a = self.e;
                 // flags unchanged
                 4
             }
-            0x7C => { // LD A, H
+            0x7C => {
+                // LD A, H
                 self.a = self.h;
                 // flags unchanged
                 4
             }
-            0x7D => { // LD A, L
+            0x7D => {
+                // LD A, L
                 self.a = self.l;
                 // flags unchanged
                 4
             }
-            0x7E => { // LD A, (HL)
+            0x7E => {
+                // LD A, (HL)
                 self.a = bus.read_byte(self.get_hl());
                 // flags unchanged
                 7
             }
-            0x7F => { // LD A, A
+            0x7F => {
+                // LD A, A
                 // flags unchanged
                 4
             }
             // <========================TODO: check flags for all instructions========================>
-            0x80 => { // ADD A, B
+            0x80 => {
+                // ADD A, B
                 self.a = self.add8(self.a, self.b);
                 // flags changed in add8
                 4
             }
-            0x81 => { // ADD A, C
+            0x81 => {
+                // ADD A, C
                 self.a = self.add8(self.a, self.c);
                 // flags changed in add8
                 4
             }
-            0x82 => { // ADD A, D
+            0x82 => {
+                // ADD A, D
                 self.a = self.add8(self.a, self.d);
                 // flags changed in add8
                 4
             }
-            0x83 => { // ADD A, E
+            0x83 => {
+                // ADD A, E
                 self.a = self.add8(self.a, self.e);
                 // flags changed in add8
                 4
             }
-            0x84 => { // ADD A, H
+            0x84 => {
+                // ADD A, H
                 self.a = self.add8(self.a, self.h);
                 // flags changed in add8
                 4
             }
-            0x85 => { // ADD A, L
+            0x85 => {
+                // ADD A, L
                 self.a = self.add8(self.a, self.l);
                 // flags changed in add8
                 4
             }
-            0x86 => { // ADD A, (HL)
+            0x86 => {
+                // ADD A, (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a = self.add8(self.a, val);
                 // flags changed in add8
                 7
             }
-            0x87 => { // ADD A, A
+            0x87 => {
+                // ADD A, A
                 self.a = self.add8(self.a, self.a);
                 // flags changed in add8
                 4
             }
-            0x88 => { // ADC A, B
+            0x88 => {
+                // ADC A, B
                 self.a = self.adc8(self.a, self.b);
                 4
             }
-            0x89 => { // ADC A, C
+            0x89 => {
+                // ADC A, C
                 self.a = self.adc8(self.a, self.c);
                 4
             }
-            0x8A => { // ADC A, D
+            0x8A => {
+                // ADC A, D
                 self.a = self.adc8(self.a, self.d);
                 4
             }
-            0x8B => { // ADC A, E
+            0x8B => {
+                // ADC A, E
                 self.a = self.adc8(self.a, self.e);
                 4
             }
-            0x8C => { // ADC A, H
+            0x8C => {
+                // ADC A, H
                 self.a = self.adc8(self.a, self.h);
                 4
             }
-            0x8D => { // ADC A, L
+            0x8D => {
+                // ADC A, L
                 self.a = self.adc8(self.a, self.l);
                 4
             }
-            0x8E => { // ADC A, (HL)
+            0x8E => {
+                // ADC A, (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a = self.adc8(self.a, val);
                 7
             }
-            0x8F => { // ADC A, A
+            0x8F => {
+                // ADC A, A
                 self.a = self.adc8(self.a, self.a);
                 4
             }
-            0x90 => { // SUB B
+            0x90 => {
+                // SUB B
                 self.a = self.sub8(self.a, self.b);
                 4
             }
-            0x91 => { // SUB C
+            0x91 => {
+                // SUB C
                 self.a = self.sub8(self.a, self.c);
                 4
             }
-            0x92 => { // SUB D
+            0x92 => {
+                // SUB D
                 self.a = self.sub8(self.a, self.d);
                 4
             }
-            0x93 => { // SUB E
+            0x93 => {
+                // SUB E
                 self.a = self.sub8(self.a, self.e);
                 4
             }
-            0x94 => { // SUB H
+            0x94 => {
+                // SUB H
                 self.a = self.sub8(self.a, self.h);
                 4
             }
-            0x95 => { // SUB L
+            0x95 => {
+                // SUB L
                 self.a = self.sub8(self.a, self.l);
                 4
             }
-            0x96 => { // SUB (HL)
+            0x96 => {
+                // SUB (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a = self.sub8(self.a, val);
                 7
             }
-            0x97 => { // SUB A
+            0x97 => {
+                // SUB A
                 self.a = 0;
                 self.set_all_flags(false, true, false, false, false, false, true, false);
                 4
             }
-            0x98 => { // SBC A, B
+            0x98 => {
+                // SBC A, B
                 self.a = self.sbc8(self.a, self.b);
                 4
             }
-            0x99 => { // SBC A, C
+            0x99 => {
+                // SBC A, C
                 self.a = self.sbc8(self.a, self.c);
                 4
             }
-            0x9A => { // SBC A, D
+            0x9A => {
+                // SBC A, D
                 self.a = self.sbc8(self.a, self.d);
                 4
             }
-            0x9B => { // SBC A, E
+            0x9B => {
+                // SBC A, E
                 self.a = self.sbc8(self.a, self.e);
                 4
             }
-            0x9C => { // SBC A, H
+            0x9C => {
+                // SBC A, H
                 self.a = self.sbc8(self.a, self.h);
                 4
             }
-            0x9D => { // SBC A, L
+            0x9D => {
+                // SBC A, L
                 self.a = self.sbc8(self.a, self.l);
                 4
             }
-            0x9E => { // SBC A, (HL)
+            0x9E => {
+                // SBC A, (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a = self.sbc8(self.a, val);
                 7
             }
-            0x9F => { // SBC A, A
+            0x9F => {
+                // SBC A, A
                 self.a = self.sbc8(self.a, self.a);
                 4
             }
-            0xA0 => { // AND B
+            0xA0 => {
+                // AND B
                 self.a &= self.b;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA1 => { // AND C
+            0xA1 => {
+                // AND C
                 self.a &= self.c;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA2 => { // AND D
+            0xA2 => {
+                // AND D
                 self.a &= self.d;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA3 => { // AND E
+            0xA3 => {
+                // AND E
                 self.a &= self.e;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA4 => { // AND H
+            0xA4 => {
+                // AND H
                 self.a &= self.h;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA5 => { // AND L
+            0xA5 => {
+                // AND L
                 self.a &= self.l;
                 self.set_flags_and(self.a);
                 4
             }
-            0xA6 => { // AND (HL)
+            0xA6 => {
+                // AND (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a &= val;
                 self.set_flags_and(self.a);
                 7
             }
-            0xA7 => { // AND A
+            0xA7 => {
+                // AND A
                 self.set_flags_and(self.a);
                 4
             }
-            0xA8 => { // XOR B
+            0xA8 => {
+                // XOR B
                 self.a ^= self.b;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xA9 => { // XOR C
+            0xA9 => {
+                // XOR C
                 self.a ^= self.c;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xAA => { // XOR D
+            0xAA => {
+                // XOR D
                 self.a ^= self.d;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xAB => { // XOR E
+            0xAB => {
+                // XOR E
                 self.a ^= self.e;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xAC => { // XOR H
+            0xAC => {
+                // XOR H
                 self.a ^= self.h;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xAD => { // XOR L
+            0xAD => {
+                // XOR L
                 self.a ^= self.l;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xAE => { // XOR (HL)
+            0xAE => {
+                // XOR (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a ^= val;
                 self.set_flags_or_xor(self.a);
                 7
             }
-            0xAF => { // XOR A
+            0xAF => {
+                // XOR A
                 self.a = 0;
                 self.set_all_flags(false, true, false, false, false, true, false, false);
                 4
             }
-            0xB0 => { // OR B
+            0xB0 => {
+                // OR B
                 self.a |= self.b;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB1 => { // OR C
+            0xB1 => {
+                // OR C
                 self.a |= self.c;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB2 => { // OR D
+            0xB2 => {
+                // OR D
                 self.a |= self.d;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB3 => { // OR E
+            0xB3 => {
+                // OR E
                 self.a |= self.e;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB4 => { // OR H
+            0xB4 => {
+                // OR H
                 self.a |= self.h;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB5 => { // OR L
+            0xB5 => {
+                // OR L
                 self.a |= self.l;
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB6 => { // OR (HL)
+            0xB6 => {
+                // OR (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.a |= val;
                 self.set_flags_or_xor(self.a);
                 7
             }
-            0xB7 => { // OR A
+            0xB7 => {
+                // OR A
                 self.set_flags_or_xor(self.a);
                 4
             }
-            0xB8 => { // CP B
+            0xB8 => {
+                // CP B
                 self.sub8(self.a, self.b);
                 4
             }
-            0xB9 => { // CP C
+            0xB9 => {
+                // CP C
                 self.sub8(self.a, self.c);
                 4
             }
-            0xBA => { // CP D
+            0xBA => {
+                // CP D
                 self.sub8(self.a, self.d);
                 4
             }
-            0xBB => { // CP E
+            0xBB => {
+                // CP E
                 self.sub8(self.a, self.e);
                 4
             }
-            0xBC => { // CP H
+            0xBC => {
+                // CP H
                 self.sub8(self.a, self.h);
                 4
             }
-            0xBD => { // CP L
+            0xBD => {
+                // CP L
                 self.sub8(self.a, self.l);
                 4
             }
-            0xBE => { // CP (HL)
+            0xBE => {
+                // CP (HL)
                 let val = bus.read_byte(self.get_hl());
                 self.sub8(self.a, val);
                 7
             }
-            0xBF => { // CP A
+            0xBF => {
+                // CP A
                 self.set_all_flags(false, true, false, false, false, false, true, false);
                 4
             }
-            0xC0 => { // RET NZ
+            0xC0 => {
+                // RET NZ
                 if (self.f & F_Z) == 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1610,23 +1848,27 @@ impl Z80 {
                     5
                 }
             }
-            0xC1 => { // POP BC
+            0xC1 => {
+                // POP BC
                 let bc = self.pop(bus);
                 self.set_bc(bc);
                 10
             }
-            0xC2 => { // JP NZ, nn
+            0xC2 => {
+                // JP NZ, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_Z) == 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xC3 => { // JP nn
+            0xC3 => {
+                // JP nn
                 self.pc = self.read_word_pc(bus);
                 10
             }
-            0xC4 => { // CALL NZ, nn
+            0xC4 => {
+                // CALL NZ, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_Z) == 0 {
                     self.push(bus, self.pc);
@@ -1636,21 +1878,25 @@ impl Z80 {
                     10
                 }
             }
-            0xC5 => { // PUSH BC
+            0xC5 => {
+                // PUSH BC
                 self.push(bus, self.get_bc());
                 11
             }
-            0xC6 => { // ADD A, n
+            0xC6 => {
+                // ADD A, n
                 let n = self.read_byte_pc(bus);
                 self.a = self.add8(self.a, n);
                 7
             }
-            0xC7 => { // RST 00
+            0xC7 => {
+                // RST 00
                 self.push(bus, self.pc);
                 self.pc = 0x00;
                 11
             }
-            0xC8 => { // RET Z
+            0xC8 => {
+                // RET Z
                 if (self.f & F_Z) != 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1658,21 +1904,25 @@ impl Z80 {
                     5
                 }
             }
-            0xC9 => { // RET
+            0xC9 => {
+                // RET
                 self.pc = self.pop(bus);
                 10
             }
-            0xCA => { // JP Z, nn
+            0xCA => {
+                // JP Z, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_Z) != 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xCB => { // CB prefix - bit operations
+            0xCB => {
+                // CB prefix - bit operations
                 self.step_cb(bus)
             }
-            0xCC => { // CALL Z, nn
+            0xCC => {
+                // CALL Z, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_Z) != 0 {
                     self.push(bus, self.pc);
@@ -1682,23 +1932,27 @@ impl Z80 {
                     10
                 }
             }
-            0xCD => { // CALL nn
+            0xCD => {
+                // CALL nn
                 let nn = self.read_word_pc(bus);
                 self.push(bus, self.pc);
                 self.pc = nn;
                 17
             }
-            0xCE => { // ADC A, n
+            0xCE => {
+                // ADC A, n
                 let n = self.read_byte_pc(bus);
                 self.a = self.adc8(self.a, n);
                 7
             }
-            0xCF => { // RST 08
+            0xCF => {
+                // RST 08
                 self.push(bus, self.pc);
                 self.pc = 0x08;
                 11
             }
-            0xD0 => { // RET NC
+            0xD0 => {
+                // RET NC
                 if (self.f & F_C) == 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1706,24 +1960,28 @@ impl Z80 {
                     5
                 }
             }
-            0xD1 => { // POP DE
+            0xD1 => {
+                // POP DE
                 let de = self.pop(bus);
                 self.set_de(de);
                 10
             }
-            0xD2 => { // JP NC, nn
+            0xD2 => {
+                // JP NC, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_C) == 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xD3 => { // OUT (n), A
+            0xD3 => {
+                // OUT (n), A
                 let n = self.read_byte_pc(bus);
                 bus.write_port((self.a as u16) << 8 | n as u16, self.a);
                 11
             }
-            0xD4 => { // CALL NC, nn
+            0xD4 => {
+                // CALL NC, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_C) == 0 {
                     self.push(bus, self.pc);
@@ -1733,21 +1991,25 @@ impl Z80 {
                     10
                 }
             }
-            0xD5 => { // PUSH DE
+            0xD5 => {
+                // PUSH DE
                 self.push(bus, self.get_de());
                 11
             }
-            0xD6 => { // SUB n
+            0xD6 => {
+                // SUB n
                 let n = self.read_byte_pc(bus);
                 self.a = self.sub8(self.a, n);
                 7
             }
-            0xD7 => { // RST 10
+            0xD7 => {
+                // RST 10
                 self.push(bus, self.pc);
                 self.pc = 0x10;
                 11
             }
-            0xD8 => { // RET C
+            0xD8 => {
+                // RET C
                 if (self.f & F_C) != 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1755,31 +2017,44 @@ impl Z80 {
                     5
                 }
             }
-            0xD9 => { // EXX
-                let temp_b = self.b; let temp_c = self.c;
-                self.b = self.b_alt; self.c = self.c_alt;
-                self.b_alt = temp_b; self.c_alt = temp_c;
-                let temp_d = self.d; let temp_e = self.e;
-                self.d = self.d_alt; self.e = self.e_alt;
-                self.d_alt = temp_d; self.e_alt = temp_e;
-                let temp_h = self.h; let temp_l = self.l;
-                self.h = self.h_alt; self.l = self.l_alt;
-                self.h_alt = temp_h; self.l_alt = temp_l;
+            0xD9 => {
+                // EXX
+                let temp_b = self.b;
+                let temp_c = self.c;
+                self.b = self.b_alt;
+                self.c = self.c_alt;
+                self.b_alt = temp_b;
+                self.c_alt = temp_c;
+                let temp_d = self.d;
+                let temp_e = self.e;
+                self.d = self.d_alt;
+                self.e = self.e_alt;
+                self.d_alt = temp_d;
+                self.e_alt = temp_e;
+                let temp_h = self.h;
+                let temp_l = self.l;
+                self.h = self.h_alt;
+                self.l = self.l_alt;
+                self.h_alt = temp_h;
+                self.l_alt = temp_l;
                 4
             }
-            0xDA => { // JP C, nn
+            0xDA => {
+                // JP C, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_C) != 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xDB => { // IN A, (n)
+            0xDB => {
+                // IN A, (n)
                 let n = self.read_byte_pc(bus);
                 self.a = bus.read_port((self.a as u16) << 8 | n as u16);
                 11
             }
-            0xDC => { // CALL C, nn
+            0xDC => {
+                // CALL C, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_C) != 0 {
                     self.push(bus, self.pc);
@@ -1789,20 +2064,24 @@ impl Z80 {
                     10
                 }
             }
-            0xDD => { // DD prefix - IX operations
+            0xDD => {
+                // DD prefix - IX operations
                 self.step_dd(bus)
             }
-            0xDE => { // SBC A, n
+            0xDE => {
+                // SBC A, n
                 let n = self.read_byte_pc(bus);
                 self.a = self.sbc8(self.a, n);
                 7
             }
-            0xDF => { // RST 18
+            0xDF => {
+                // RST 18
                 self.push(bus, self.pc);
                 self.pc = 0x18;
                 11
             }
-            0xE0 => { // RET PO
+            0xE0 => {
+                // RET PO
                 if (self.f & F_PV) == 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1810,25 +2089,29 @@ impl Z80 {
                     5
                 }
             }
-            0xE1 => { // POP HL
+            0xE1 => {
+                // POP HL
                 let hl = self.pop(bus);
                 self.set_hl(hl);
                 10
             }
-            0xE2 => { // JP PO, nn
+            0xE2 => {
+                // JP PO, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_PV) == 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xE3 => { // EX (SP), HL
+            0xE3 => {
+                // EX (SP), HL
                 let sp_val = self.pop(bus);
                 self.push(bus, self.get_hl());
                 self.set_hl(sp_val);
                 19
             }
-            0xE4 => { // CALL PO, nn
+            0xE4 => {
+                // CALL PO, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_PV) == 0 {
                     self.push(bus, self.pc);
@@ -1838,22 +2121,26 @@ impl Z80 {
                     10
                 }
             }
-            0xE5 => { // PUSH HL
+            0xE5 => {
+                // PUSH HL
                 self.push(bus, self.get_hl());
                 11
             }
-            0xE6 => { // AND n
+            0xE6 => {
+                // AND n
                 let n = self.read_byte_pc(bus);
                 self.a &= n;
                 self.set_flags_and(self.a);
                 7
             }
-            0xE7 => { // RST 20
+            0xE7 => {
+                // RST 20
                 self.push(bus, self.pc);
                 self.pc = 0x20;
                 11
             }
-            0xE8 => { // RET PE
+            0xE8 => {
+                // RET PE
                 if (self.f & F_PV) != 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1861,25 +2148,33 @@ impl Z80 {
                     5
                 }
             }
-            0xE9 => { // JP (HL)
+            0xE9 => {
+                // JP (HL)
                 self.pc = self.get_hl();
                 4
             }
-            0xEA => { // JP PE, nn
+            0xEA => {
+                // JP PE, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_PV) != 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xEB => { // EX DE, HL
-                let temp_d = self.d; let temp_e = self.e;
-                let temp_h = self.h; let temp_l = self.l;
-                self.d = temp_h; self.e = temp_l;
-                self.h = temp_d; self.l = temp_e;
+            0xEB => {
+                // EX DE, HL
+                let temp_d = self.d;
+                let temp_e = self.e;
+                let temp_h = self.h;
+                let temp_l = self.l;
+                self.d = temp_h;
+                self.e = temp_l;
+                self.h = temp_d;
+                self.l = temp_e;
                 4
             }
-            0xEC => { // CALL PE, nn
+            0xEC => {
+                // CALL PE, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_PV) != 0 {
                     self.push(bus, self.pc);
@@ -1889,21 +2184,25 @@ impl Z80 {
                     10
                 }
             }
-            0xED => { // ED prefix - extended operations
+            0xED => {
+                // ED prefix - extended operations
                 self.step_ed(bus)
             }
-            0xEE => { // XOR n
+            0xEE => {
+                // XOR n
                 let n = self.read_byte_pc(bus);
                 self.a ^= n;
                 self.set_flags_or_xor(self.a);
                 7
             }
-            0xEF => { // RST 28
+            0xEF => {
+                // RST 28
                 self.push(bus, self.pc);
                 self.pc = 0x28;
                 11
             }
-            0xF0 => { // RET P
+            0xF0 => {
+                // RET P
                 if (self.f & F_S) == 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1911,24 +2210,28 @@ impl Z80 {
                     5
                 }
             }
-            0xF1 => { // POP AF
+            0xF1 => {
+                // POP AF
                 let af = self.pop(bus);
                 self.set_af(af);
                 10
             }
-            0xF2 => { // JP P, nn
+            0xF2 => {
+                // JP P, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_S) == 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xF3 => { // DI
+            0xF3 => {
+                // DI
                 self.iff1 = false;
                 self.iff2 = false;
                 4
             }
-            0xF4 => { // CALL P, nn
+            0xF4 => {
+                // CALL P, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_S) == 0 {
                     self.push(bus, self.pc);
@@ -1938,22 +2241,26 @@ impl Z80 {
                     10
                 }
             }
-            0xF5 => { // PUSH AF
+            0xF5 => {
+                // PUSH AF
                 self.push(bus, self.get_af());
                 11
             }
-            0xF6 => { // OR n
+            0xF6 => {
+                // OR n
                 let n = self.read_byte_pc(bus);
                 self.a |= n;
                 self.set_flags_or_xor(self.a);
                 7
             }
-            0xF7 => { // RST 30
+            0xF7 => {
+                // RST 30
                 self.push(bus, self.pc);
                 self.pc = 0x30;
                 11
             }
-            0xF8 => { // RET M
+            0xF8 => {
+                // RET M
                 if (self.f & F_S) != 0 {
                     self.pc = self.pop(bus);
                     11
@@ -1961,22 +2268,26 @@ impl Z80 {
                     5
                 }
             }
-            0xF9 => { // LD SP, HL
+            0xF9 => {
+                // LD SP, HL
                 self.sp = self.get_hl();
                 6
             }
-            0xFA => { // JP M, nn
+            0xFA => {
+                // JP M, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_S) != 0 {
                     self.pc = nn;
                 }
                 10
             }
-            0xFB => { // EI
+            0xFB => {
+                // EI
                 self.ei_pending = true;
                 4
             }
-            0xFC => { // CALL M, nn
+            0xFC => {
+                // CALL M, nn
                 let nn = self.read_word_pc(bus);
                 if (self.f & F_S) != 0 {
                     self.push(bus, self.pc);
@@ -1986,15 +2297,18 @@ impl Z80 {
                     10
                 }
             }
-            0xFD => { // FD prefix - IY operations
+            0xFD => {
+                // FD prefix - IY operations
                 self.step_fd(bus)
             }
-            0xFE => { // CP n
+            0xFE => {
+                // CP n
                 let n = self.read_byte_pc(bus);
                 self.sub8(self.a, n);
                 7
             }
-            0xFF => { // RST 38
+            0xFF => {
+                // RST 38
                 self.push(bus, self.pc);
                 self.pc = 0x38;
                 11
@@ -2005,49 +2319,56 @@ impl Z80 {
     fn step_cb(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x00 => { // RLC B
+            0x00 => {
+                // RLC B
                 let val = self.b;
                 let new_val = val.rotate_left(1);
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x01 => { // RLC C
+            0x01 => {
+                // RLC C
                 let val = self.c;
                 let new_val = val.rotate_left(1);
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x02 => { // RLC D
+            0x02 => {
+                // RLC D
                 let val = self.d;
                 let new_val = val.rotate_left(1);
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x03 => { // RLC E
+            0x03 => {
+                // RLC E
                 let val = self.e;
                 let new_val = val.rotate_left(1);
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x04 => { // RLC H
+            0x04 => {
+                // RLC H
                 let val = self.h;
                 let new_val = val.rotate_left(1);
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x05 => { // RLC L
+            0x05 => {
+                // RLC L
                 let val = self.l;
                 let new_val = val.rotate_left(1);
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x06 => { // RLC (HL)
+            0x06 => {
+                // RLC (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_left(1);
@@ -2055,56 +2376,64 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 15
             }
-            0x07 => { // RLC A
+            0x07 => {
+                // RLC A
                 let val = self.a;
                 let new_val = val.rotate_left(1);
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x08 => { // RRC B
+            0x08 => {
+                // RRC B
                 let val = self.b;
                 let new_val = val.rotate_right(1);
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x09 => { // RRC C
+            0x09 => {
+                // RRC C
                 let val = self.c;
                 let new_val = val.rotate_right(1);
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x0A => { // RRC D
+            0x0A => {
+                // RRC D
                 let val = self.d;
                 let new_val = val.rotate_right(1);
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x0B => { // RRC E
+            0x0B => {
+                // RRC E
                 let val = self.e;
                 let new_val = val.rotate_right(1);
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x0C => { // RRC H
+            0x0C => {
+                // RRC H
                 let val = self.h;
                 let new_val = val.rotate_right(1);
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x0D => { // RRC L
+            0x0D => {
+                // RRC L
                 let val = self.l;
                 let new_val = val.rotate_right(1);
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x0E => { // RRC (HL)
+            0x0E => {
+                // RRC (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_right(1);
@@ -2112,14 +2441,16 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 15
             }
-            0x0F => { // RRC A
+            0x0F => {
+                // RRC A
                 let val = self.a;
                 let new_val = val.rotate_right(1);
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x10 => { // RL B
+            0x10 => {
+                // RL B
                 let val = self.b;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2127,7 +2458,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x11 => { // RL C
+            0x11 => {
+                // RL C
                 let val = self.c;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2135,7 +2467,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x12 => { // RL D
+            0x12 => {
+                // RL D
                 let val = self.d;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2143,7 +2476,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x13 => { // RL E
+            0x13 => {
+                // RL E
                 let val = self.e;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2151,7 +2485,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x14 => { // RL H
+            0x14 => {
+                // RL H
                 let val = self.h;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2159,7 +2494,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x15 => { // RL L
+            0x15 => {
+                // RL L
                 let val = self.l;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2167,7 +2503,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x16 => { // RL (HL)
+            0x16 => {
+                // RL (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_carry = (val & 0x80) != 0;
@@ -2176,7 +2513,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 15
             }
-            0x17 => { // RL A
+            0x17 => {
+                // RL A
                 let val = self.a;
                 let new_carry = (val & 0x80) != 0;
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
@@ -2184,7 +2522,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x18 => { // RR B
+            0x18 => {
+                // RR B
                 let val = self.b;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2192,7 +2531,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x19 => { // RR C
+            0x19 => {
+                // RR C
                 let val = self.c;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2200,7 +2540,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x1A => { // RR D
+            0x1A => {
+                // RR D
                 let val = self.d;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2208,7 +2549,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x1B => { // RR E
+            0x1B => {
+                // RR E
                 let val = self.e;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2216,7 +2558,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x1C => { // RR H
+            0x1C => {
+                // RR H
                 let val = self.h;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2224,7 +2567,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x1D => { // RR L
+            0x1D => {
+                // RR L
                 let val = self.l;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2232,7 +2576,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x1E => { // RR (HL)
+            0x1E => {
+                // RR (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_carry = (val & 0x01) != 0;
@@ -2241,7 +2586,8 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 15
             }
-            0x1F => { // RR A
+            0x1F => {
+                // RR A
                 let val = self.a;
                 let new_carry = (val & 0x01) != 0;
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
@@ -2249,49 +2595,56 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
             }
-            0x20 => { // SLA B
+            0x20 => {
+                // SLA B
                 let val = self.b;
                 let new_val = val << 1;
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x21 => { // SLA C
+            0x21 => {
+                // SLA C
                 let val = self.c;
                 let new_val = val << 1;
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x22 => { // SLA D
+            0x22 => {
+                // SLA D
                 let val = self.d;
                 let new_val = val << 1;
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x23 => { // SLA E
+            0x23 => {
+                // SLA E
                 let val = self.e;
                 let new_val = val << 1;
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x24 => { // SLA H
+            0x24 => {
+                // SLA H
                 let val = self.h;
                 let new_val = val << 1;
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x25 => { // SLA L
+            0x25 => {
+                // SLA L
                 let val = self.l;
                 let new_val = val << 1;
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x26 => { // SLA (HL)
+            0x26 => {
+                // SLA (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val << 1;
@@ -2299,56 +2652,64 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 15
             }
-            0x27 => { // SLA A
+            0x27 => {
+                // SLA A
                 let val = self.a;
                 let new_val = val << 1;
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x28 => { // SRA B
+            0x28 => {
+                // SRA B
                 let val = self.b;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x29 => { // SRA C
+            0x29 => {
+                // SRA C
                 let val = self.c;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x2A => { // SRA D
+            0x2A => {
+                // SRA D
                 let val = self.d;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x2B => { // SRA E
+            0x2B => {
+                // SRA E
                 let val = self.e;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x2C => { // SRA H
+            0x2C => {
+                // SRA H
                 let val = self.h;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x2D => { // SRA L
+            0x2D => {
+                // SRA L
                 let val = self.l;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x2E => { // SRA (HL)
+            0x2E => {
+                // SRA (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = (val >> 1) | (val & 0x80);
@@ -2356,56 +2717,64 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 15
             }
-            0x2F => { // SRA A
+            0x2F => {
+                // SRA A
                 let val = self.a;
                 let new_val = (val >> 1) | (val & 0x80);
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x30 => { // SLL B (undocumented)
+            0x30 => {
+                // SLL B (undocumented)
                 let val = self.b;
                 let new_val = (val << 1) | 0x01;
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x31 => { // SLL C (undocumented)
+            0x31 => {
+                // SLL C (undocumented)
                 let val = self.c;
                 let new_val = (val << 1) | 0x01;
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x32 => { // SLL D (undocumented)
+            0x32 => {
+                // SLL D (undocumented)
                 let val = self.d;
                 let new_val = (val << 1) | 0x01;
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x33 => { // SLL E (undocumented)
+            0x33 => {
+                // SLL E (undocumented)
                 let val = self.e;
                 let new_val = (val << 1) | 0x01;
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x34 => { // SLL H (undocumented)
+            0x34 => {
+                // SLL H (undocumented)
                 let val = self.h;
                 let new_val = (val << 1) | 0x01;
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x35 => { // SLL L (undocumented)
+            0x35 => {
+                // SLL L (undocumented)
                 let val = self.l;
                 let new_val = (val << 1) | 0x01;
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x36 => { // SLL (HL) (undocumented)
+            0x36 => {
+                // SLL (HL) (undocumented)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = (val << 1) | 0x01;
@@ -2413,56 +2782,64 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 15
             }
-            0x37 => { // SLL A (undocumented)
+            0x37 => {
+                // SLL A (undocumented)
                 let val = self.a;
                 let new_val = (val << 1) | 0x01;
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x80) != 0);
                 8
             }
-            0x38 => { // SRL B
+            0x38 => {
+                // SRL B
                 let val = self.b;
                 let new_val = val >> 1;
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x39 => { // SRL C
+            0x39 => {
+                // SRL C
                 let val = self.c;
                 let new_val = val >> 1;
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3A => { // SRL D
+            0x3A => {
+                // SRL D
                 let val = self.d;
                 let new_val = val >> 1;
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3B => { // SRL E
+            0x3B => {
+                // SRL E
                 let val = self.e;
                 let new_val = val >> 1;
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3C => { // SRL H
+            0x3C => {
+                // SRL H
                 let val = self.h;
                 let new_val = val >> 1;
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3D => { // SRL L
+            0x3D => {
+                // SRL L
                 let val = self.l;
                 let new_val = val >> 1;
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x3E => { // SRL (HL)
+            0x3E => {
+                // SRL (HL)
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
@@ -2470,57 +2847,77 @@ impl Z80 {
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 15
             }
-            0x3F => { // SRL A
+            0x3F => {
+                // SRL A
                 let val = self.a;
                 let new_val = val >> 1;
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, (val & 0x01) != 0);
                 8
             }
-            0x40..=0x7F => { // BIT b, r
+            0x40..=0x7F => {
+                // BIT b, r
                 let bit = (opcode >> 3) & 0x07;
                 let r = opcode & 0x07;
-                let val = if r == 6 { bus.read_byte(self.get_hl()) } else { self.get_reg(r) };
+                let val = if r == 6 {
+                    bus.read_byte(self.get_hl())
+                } else {
+                    self.get_reg(r)
+                };
                 self.set_flags_bit(val, bit);
-                if r == 6 { 12 } else { 8 }
-            }
-            0x80..=0xBF => { // RES b, r
-                let b = (opcode >> 3) & 0x07;
-                let r = opcode & 0x07;
-                if r == 6 { // RES b, (HL)
-                    let addr = self.get_hl();
-                    let val = bus.read_byte(addr);
-                    let new_val = val & !(1 << b);
-                    bus.write_byte(addr, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
-                    15
-                } else { // RES b, r
-                    let val = self.get_reg(r);
-                    let new_val = val & !(1 << b);
-                    self.set_reg(r, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                if r == 6 {
+                    12
+                } else {
                     8
                 }
             }
-            0xC0..=0xFF => { // SET b, r
+            0x80..=0xBF => {
+                // RES b, r
                 let b = (opcode >> 3) & 0x07;
                 let r = opcode & 0x07;
-                if r == 6 { // SET b, (HL)
+                if r == 6 {
+                    // RES b, (HL)
+                    let addr = self.get_hl();
+                    let val = bus.read_byte(addr);
+                    let new_val = val & !(1 << b);
+                    bus.write_byte(addr, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f =
+                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    15
+                } else {
+                    // RES b, r
+                    let val = self.get_reg(r);
+                    let new_val = val & !(1 << b);
+                    self.set_reg(r, new_val);
+                    // Flags are not affected except F_X and F_Y (copied from new_val)
+                    self.f =
+                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    8
+                }
+            }
+            0xC0..=0xFF => {
+                // SET b, r
+                let b = (opcode >> 3) & 0x07;
+                let r = opcode & 0x07;
+                if r == 6 {
+                    // SET b, (HL)
                     let addr = self.get_hl();
                     let val = bus.read_byte(addr);
                     let new_val = val | (1 << b);
                     bus.write_byte(addr, new_val);
                     // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    self.f =
+                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     15
-                } else { // SET b, r
+                } else {
+                    // SET b, r
                     let val = self.get_reg(r);
                     let new_val = val | (1 << b);
                     self.set_reg(r, new_val);
                     // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f = (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    self.f =
+                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
                     8
                 }
             }
@@ -2530,134 +2927,169 @@ impl Z80 {
     fn step_ed(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x00..=0x3F => { // Unused ED opcodes
+            0x00..=0x3F => {
+                // Unused ED opcodes
                 8 // NOP
             }
-            0x40 => { // IN B, (C)
+            0x40 => {
+                // IN B, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.b = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x41 => { // OUT (C), B
+            0x41 => {
+                // OUT (C), B
                 bus.write_port(self.get_bc(), self.b);
                 12
             }
-            0x42 => { // SBC HL, BC
+            0x42 => {
+                // SBC HL, BC
                 let hl = self.sbc16(self.get_hl(), self.get_bc());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x43 => { // LD (nn), BC
+            0x43 => {
+                // LD (nn), BC
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.c);
                 bus.write_byte(nn.wrapping_add(1), self.b);
                 20
             }
-            0x44 => { // NEG
+            0x44 => {
+                // NEG
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 }) |
-                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
-                         (if Self::parity(self.a) { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFF { F_C } else { 0 }) |
-                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                self.f = (if self.a == 0 { F_Z } else { 0 })
+                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
+                    | (if Self::parity(self.a) { F_PV } else { 0 })
+                    | F_N
+                    | (if result > 0xFF { F_C } else { 0 })
+                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
                 8
             }
-            0x45 => { // RETN
+            0x45 => {
+                // RETN
                 self.pc = self.pop(bus);
                 self.iff1 = self.iff2;
                 14
             }
-            0x46 => { // IM 0
+            0x46 => {
+                // IM 0
                 self.im = InterruptMode::IM0;
                 8
             }
-            0x47 => { // LD I, A
+            0x47 => {
+                // LD I, A
                 self.i = self.a;
                 9
             }
-            0x48 => { // IN C, (C)
+            0x48 => {
+                // IN C, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.c = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x49 => { // OUT (C), C
+            0x49 => {
+                // OUT (C), C
                 bus.write_port(self.get_bc(), self.c);
                 12
             }
-            0x4A => { // ADC HL, BC
+            0x4A => {
+                // ADC HL, BC
                 let hl = self.adc16(self.get_hl(), self.get_bc());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x4B => { // LD BC, (nn)
+            0x4B => {
+                // LD BC, (nn)
                 let nn = self.read_word_pc(bus);
                 self.set_bc(nn);
                 20
             }
-            0x4C => { // Unused ED opcode
+            0x4C => {
+                // Unused ED opcode
                 8 // NOP
             }
-            0x4D => { // RETI
+            0x4D => {
+                // RETI
                 self.pc = self.pop(bus);
                 14
             }
-            0x4E => { // IM 0 (undocumented)
+            0x4E => {
+                // IM 0 (undocumented)
                 self.im = InterruptMode::IM0;
                 8
             }
-            0x4F => { // LD R,A
+            0x4F => {
+                // LD R,A
                 panic!("Unimplemented ED opcode: 0x4F LD R,A");
             }
-            0x50 => { // IN D,(C)
+            0x50 => {
+                // IN D,(C)
                 panic!("Unimplemented ED opcode: 0x50 IN D,(C)");
             }
-            0x51 => { // OUT (C), D
+            0x51 => {
+                // OUT (C), D
                 bus.write_port(self.get_bc(), self.d);
                 12
-            }            
-            0x52 => { // SBC HL, DE
+            }
+            0x52 => {
+                // SBC HL, DE
                 let hl = self.sbc16(self.get_hl(), self.get_de());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x53 => { // LD (nn), DE
+            0x53 => {
+                // LD (nn), DE
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.e);
                 bus.write_byte(nn.wrapping_add(1), self.d);
                 20
             }
-            0x54 => { // NEG (undocumented)
+            0x54 => {
+                // NEG (undocumented)
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 }) |
-                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
-                         (if Self::parity(self.a) { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFF { F_C } else { 0 }) |
-                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                self.f = (if self.a == 0 { F_Z } else { 0 })
+                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
+                    | (if Self::parity(self.a) { F_PV } else { 0 })
+                    | F_N
+                    | (if result > 0xFF { F_C } else { 0 })
+                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
                 8
             }
-            0x55 => { // RETN (undocumented)
+            0x55 => {
+                // RETN (undocumented)
                 self.pc = self.pop(bus);
                 self.iff1 = self.iff2;
                 14
             }
-            0x56 => { // IM 1
+            0x56 => {
+                // IM 1
                 self.im = InterruptMode::IM1;
                 8
             }
-            0x57 => { // LD A, I
+            0x57 => {
+                // LD A, I
                 self.a = self.i;
                 self.set_flag_s(self.a & 0x80 != 0);
                 self.set_flag_z(self.a == 0);
@@ -2666,50 +3098,63 @@ impl Z80 {
                 self.set_flag_n(false);
                 9
             }
-            0x58 => { // IN E, (C)
+            0x58 => {
+                // IN E, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.e = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x59 => { // OUT (C), E
+            0x59 => {
+                // OUT (C), E
                 bus.write_port(self.get_bc(), self.e);
                 12
             }
-            0x5A => { // ADC HL, DE
+            0x5A => {
+                // ADC HL, DE
                 let hl = self.adc16(self.get_hl(), self.get_de());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x5B => { // LD DE, (nn)
+            0x5B => {
+                // LD DE, (nn)
                 let nn = self.read_word_pc(bus);
                 self.set_de(nn);
                 20
             }
-            0x5C => { // NEG (undocumented)
+            0x5C => {
+                // NEG (undocumented)
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 }) |
-                         (if (self.a & 0x80) != 0 { F_S } else { 0 }) |
-                         (if Self::parity(self.a) { F_PV } else { 0 }) |
-                         F_N |
-                         (if result > 0xFF { F_C } else { 0 }) |
-                         (if (val & 0x0F) != 0 { F_H } else { 0 });
+                self.f = (if self.a == 0 { F_Z } else { 0 })
+                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
+                    | (if Self::parity(self.a) { F_PV } else { 0 })
+                    | F_N
+                    | (if result > 0xFF { F_C } else { 0 })
+                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
                 8
             }
-            0x5D => { // RETN (undocumented)
+            0x5D => {
+                // RETN (undocumented)
                 self.pc = self.pop(bus);
                 self.iff1 = self.iff2;
                 14
             }
-            0x5E => { // IM 2
+            0x5E => {
+                // IM 2
                 self.im = InterruptMode::IM2;
                 8
             }
-            0x5F => { // LD A, R
+            0x5F => {
+                // LD A, R
                 self.a = self.r;
                 self.set_flag_s(self.a & 0x80 != 0);
                 self.set_flag_z(self.a == 0);
@@ -2718,36 +3163,49 @@ impl Z80 {
                 self.set_flag_n(false);
                 9
             }
-            0x60 => { // IN H, (C)
+            0x60 => {
+                // IN H, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.h = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x61 => { // OUT (C), H
+            0x61 => {
+                // OUT (C), H
                 bus.write_port(self.get_bc(), self.h);
                 12
             }
-            0x62 => { // SBC HL, HL
+            0x62 => {
+                // SBC HL, HL
                 let hl = self.sbc16(self.get_hl(), self.get_hl());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x63 => { // LD (nn), HL
+            0x63 => {
+                // LD (nn), HL
                 panic!("Unimplemented ED opcode: 0x63 LD (nn), HL");
             }
-            0x64 => { // NEG (undocumented)
+            0x64 => {
+                // NEG (undocumented)
                 panic!("Unimplemented ED opcode: 0x64 NEG");
             }
-            0x65 => { // RETN (undocumented)
+            0x65 => {
+                // RETN (undocumented)
                 panic!("Unimplemented ED opcode: 0x65 RETN");
             }
-            0x66 => { // IM 0 (undocumented)
+            0x66 => {
+                // IM 0 (undocumented)
                 panic!("Unimplemented ED opcode: 0x66 IM 0");
             }
-            0x67 => { // RRD
+            0x67 => {
+                // RRD
                 let addr = self.get_hl();
                 let mem_val = bus.read_byte(addr);
                 let acc_val = self.a;
@@ -2773,29 +3231,39 @@ impl Z80 {
                 // C is not affected
                 18
             }
-            0x68 => { // IN L, (C)
+            0x68 => {
+                // IN L, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.l = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x69 => { // OUT (C), L
+            0x69 => {
+                // OUT (C), L
                 bus.write_port(self.get_bc(), self.l);
                 12
             }
-            0x6A => { // ADC HL, HL
+            0x6A => {
+                // ADC HL, HL
                 let hl = self.adc16(self.get_hl(), self.get_hl());
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x6B => { // LD HL, (nn)
+            0x6B => {
+                // LD HL, (nn)
                 let nn = self.read_word_pc(bus);
                 self.set_hl(nn);
                 20
             }
-            0x6F => { // RLD
+            0x6F => {
+                // RLD
                 let addr = self.get_hl();
                 let mem_val = bus.read_byte(addr);
                 let acc_val = self.a;
@@ -2821,73 +3289,94 @@ impl Z80 {
                 // C is not affected
                 18
             }
-            0x70 => { // IN 0, (C) (undocumented)
+            0x70 => {
+                // IN 0, (C) (undocumented)
                 let port = self.get_bc();
                 let _ = bus.read_port(port);
                 // Discarded
                 12
             }
-            0x71 => { // OUT (C), 0 (undocumented)
+            0x71 => {
+                // OUT (C), 0 (undocumented)
                 bus.write_port(self.get_bc(), 0);
                 12
             }
-            0x72 => { // SBC HL, SP
+            0x72 => {
+                // SBC HL, SP
                 let hl = self.sbc16(self.get_hl(), self.sp);
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x73 => { // LD (nn), SP
+            0x73 => {
+                // LD (nn), SP
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, (self.sp & 0x00FF) as u8);
                 bus.write_byte(nn.wrapping_add(1), (self.sp >> 8) as u8);
                 20
             }
-            0x74 => { // NEG (undocumented)
+            0x74 => {
+                // NEG (undocumented)
                 panic!("Unimplemented ED opcode: 0x74 NEG");
             }
-            0x75 => { // RETN (undocumented)
+            0x75 => {
+                // RETN (undocumented)
                 panic!("Unimplemented ED opcode: 0x75 RETN");
             }
-            0x76 => { // IM 1 (undocumented)
+            0x76 => {
+                // IM 1 (undocumented)
                 panic!("Unimplemented ED opcode: 0x76 IM 1");
             }
-            0x78 => { // IN A, (C)
+            0x78 => {
+                // IN A, (C)
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.a = val;
-                self.f = (self.f & F_C) | (if (val & 0x80) != 0 { F_S } else { 0 }) | (if val == 0 { F_Z } else { 0 }) | (if (val & 0x20) != 0 { F_Y } else { 0 }) | (if (val & 0x08) != 0 { F_X } else { 0 }) | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & F_C)
+                    | (if (val & 0x80) != 0 { F_S } else { 0 })
+                    | (if val == 0 { F_Z } else { 0 })
+                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
+                    | (if (val & 0x08) != 0 { F_X } else { 0 })
+                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
                 12
             }
-            0x79 => { // OUT (C), A
+            0x79 => {
+                // OUT (C), A
                 bus.write_port(self.get_bc(), self.a);
                 12
             }
-            0x7A => { // ADC HL, SP
+            0x7A => {
+                // ADC HL, SP
                 let hl = self.adc16(self.get_hl(), self.sp);
                 self.set_hl(hl);
                 // flags set above
                 15
             }
-            0x7B => { // LD SP, (nn)
+            0x7B => {
+                // LD SP, (nn)
                 let nn = self.read_word_pc(bus);
-                let val = bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
+                let val =
+                    bus.read_byte(nn) as u16 | ((bus.read_byte(nn.wrapping_add(1)) as u16) << 8);
                 self.sp = val;
                 20
             }
-            0x7C => { // NEG (undocumented)
+            0x7C => {
+                // NEG (undocumented)
                 panic!("Unimplemented ED opcode: 0x7C NEG");
             }
-            0x7D => { // RETN (undocumented)
+            0x7D => {
+                // RETN (undocumented)
                 panic!("Unimplemented ED opcode: 0x7D RETN");
             }
-            0x7E => { // IM 2 (undocumented)
+            0x7E => {
+                // IM 2 (undocumented)
                 panic!("Unimplemented ED opcode: 0x7E IM 2");
             }
-            0xA0 => { // LDI
+            0xA0 => {
+                // LDI
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
-                
+
                 self.set_hl(self.get_hl().wrapping_add(1));
                 self.set_de(self.get_de().wrapping_add(1));
                 let bc = self.get_bc().wrapping_sub(1);
@@ -2904,7 +3393,8 @@ impl Z80 {
 
                 16
             }
-            0xA1 => { // CPI
+            0xA1 => {
+                // CPI
                 let val = bus.read_byte(self.get_hl());
                 let result = self.a.wrapping_sub(val);
 
@@ -2929,7 +3419,8 @@ impl Z80 {
 
                 16
             }
-            0xA2 => { // INI
+            0xA2 => {
+                // INI
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 bus.write_byte(self.get_de(), val);
@@ -2938,10 +3429,13 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
                 self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
+                self.f = (self.f & (F_S | F_Z | F_C))
+                    | (if bc != 0 { F_PV } else { 0 })
+                    | (val & (F_Y | F_X));
                 16
             }
-            0xA3 => { // OUTI
+            0xA3 => {
+                // OUTI
                 let port = self.get_bc();
                 let val = bus.read_byte(self.get_hl());
                 bus.write_port(port, val);
@@ -2950,16 +3444,21 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
                 self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C)) | (if bc != 0 { F_PV } else { 0 }) | (val & (F_Y | F_X));
+                self.f = (self.f & (F_S | F_Z | F_C))
+                    | (if bc != 0 { F_PV } else { 0 })
+                    | (val & (F_Y | F_X));
                 16
             }
-            0xAA => { // IND
+            0xAA => {
+                // IND
                 panic!("Unimplemented ED opcode: 0xAA IND");
             }
-            0xAB => { // OUTD
+            0xAB => {
+                // OUTD
                 panic!("Unimplemented ED opcode: 0xAB OUTD");
             }
-            0xA8 => { // LDD
+            0xA8 => {
+                // LDD
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
 
@@ -2979,7 +3478,8 @@ impl Z80 {
 
                 16
             }
-            0xA9 => { // CPD
+            0xA9 => {
+                // CPD
                 let val = bus.read_byte(self.get_hl());
                 let result = self.a.wrapping_sub(val);
 
@@ -3001,10 +3501,11 @@ impl Z80 {
                 let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
                 let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
                 self.set_flags_xy_from_result(xy_val);
-                
+
                 16
             }
-            0xB0 => { // LDIR
+            0xB0 => {
+                // LDIR
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
 
@@ -3029,7 +3530,8 @@ impl Z80 {
                     16
                 }
             }
-            0xB1 => { // CPIR
+            0xB1 => {
+                // CPIR
                 let val = bus.read_byte(self.get_hl());
                 let result = self.a.wrapping_sub(val);
 
@@ -3059,13 +3561,16 @@ impl Z80 {
                     16
                 }
             }
-            0xB2 => { // INIR
+            0xB2 => {
+                // INIR
                 panic!("Unimplemented ED opcode: 0xB2 INIR");
             }
-            0xB3 => { // OTIR
+            0xB3 => {
+                // OTIR
                 panic!("Unimplemented ED opcode: 0xB3 OTIR");
             }
-            0xB8 => { // LDDR
+            0xB8 => {
+                // LDDR
                 let val = bus.read_byte(self.get_hl());
                 bus.write_byte(self.get_de(), val);
 
@@ -3090,7 +3595,8 @@ impl Z80 {
                     16
                 }
             }
-            0xB9 => { // CPDR
+            0xB9 => {
+                // CPDR
                 let val = bus.read_byte(self.get_hl());
                 let result = self.a.wrapping_sub(val);
 
@@ -3120,10 +3626,12 @@ impl Z80 {
                     16
                 }
             }
-            0xBA => { // INDR
+            0xBA => {
+                // INDR
                 panic!("Unimplemented ED opcode: 0xBA INDR");
             }
-            0xBB => { // OTDR
+            0xBB => {
+                // OTDR
                 panic!("Unimplemented ED opcode: 0xBB OTDR");
             }
             _ => {
@@ -3135,83 +3643,98 @@ impl Z80 {
     fn step_dd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x09 => { // ADD IX, BC
+            0x09 => {
+                // ADD IX, BC
                 let result = self.ix.wrapping_add(self.get_bc());
                 self.ix = result;
                 15
             }
-            0x19 => { // ADD IX, DE
+            0x19 => {
+                // ADD IX, DE
                 let result = self.ix.wrapping_add(self.get_de());
                 self.ix = result;
                 15
             }
-            0x21 => { // LD IX, nn
+            0x21 => {
+                // LD IX, nn
                 self.ix = self.read_word_pc(bus);
                 14
             }
-            0x22 => { // LD (nn), IX
+            0x22 => {
+                // LD (nn), IX
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.ix as u8);
                 bus.write_byte(nn.wrapping_add(1), (self.ix >> 8) as u8);
                 20
             }
-            0x23 => { // INC IX
+            0x23 => {
+                // INC IX
                 self.ix = self.ix.wrapping_add(1);
                 10
             }
-            0x24 => { // INC IXH (undocumented)
+            0x24 => {
+                // INC IXH (undocumented)
                 let result = ((self.ix >> 8) as u8).wrapping_add(1);
                 self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
                 self.set_flags_add(result as u8, 1, result as u16);
                 self.f &= !F_N;
                 8
             }
-            0x25 => { // DEC IXH (undocumented)
+            0x25 => {
+                // DEC IXH (undocumented)
                 let result = ((self.ix >> 8) as u8).wrapping_sub(1);
                 self.ix = (self.ix & 0x00FF) | ((result as u16) << 8);
                 self.set_flags_sub(result as u8, 1, result as i16);
                 8
             }
-            0x26 => { // LD IXH, n (undocumented)
+            0x26 => {
+                // LD IXH, n (undocumented)
                 let n = self.read_byte_pc(bus);
                 self.ix = (self.ix & 0x00FF) | ((n as u16) << 8);
                 11
             }
-            0x29 => { // ADD IX, IX
+            0x29 => {
+                // ADD IX, IX
                 let result = self.ix.wrapping_add(self.ix);
                 self.ix = result;
                 15
             }
-            0x2A => { // LD IX, (nn)
+            0x2A => {
+                // LD IX, (nn)
                 let nn = self.read_word_pc(bus);
                 let low = bus.read_byte(nn);
                 let high = bus.read_byte(nn.wrapping_add(1));
                 self.ix = (high as u16) << 8 | low as u16;
                 20
             }
-            0x2B => { // DEC IX
+            0x2B => {
+                // DEC IX
                 self.ix = self.ix.wrapping_sub(1);
                 10
             }
-            0x2C => { // INC IXL (undocumented)
+            0x2C => {
+                // INC IXL (undocumented)
                 let result = (self.ix as u8).wrapping_add(1);
                 self.ix = (self.ix & 0xFF00) | result as u16;
                 self.set_flags_add(result, 1, result as u16);
                 self.f &= !F_N;
                 8
             }
-            0x2D => { // DEC IXL (undocumented)
+            0x2D => {
+                // DEC IXL (undocumented)
                 let result = (self.ix as u8).wrapping_sub(1);
                 self.ix = (self.ix & 0xFF00) | result as u16;
                 self.set_flags_sub(result, 1, result as i16);
                 8
             }
-            0x2E => { // LD IXL, n (undocumented)
+            0x2E => {
+                // LD IXL, n (undocumented)
                 let n = self.read_byte_pc(bus);
                 self.ix = (self.ix & 0xFF00) | n as u16;
                 11
             }
-            0x34 => { // INC (IX+d)
+            0x34 => {
+                // INC (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_add(1);
@@ -3219,7 +3742,8 @@ impl Z80 {
                 self.set_flags_inc_r8(val);
                 23
             }
-            0x35 => { // DEC (IX+d)
+            0x35 => {
+                // DEC (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_sub(1);
@@ -3227,338 +3751,406 @@ impl Z80 {
                 self.set_flags_dec_r8(val);
                 23
             }
-            0x36 => { // LD (IX+d), n
+            0x36 => {
+                // LD (IX+d), n
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let n = self.read_byte_pc(bus);
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, n);
                 19
             }
-            0x39 => { // ADD IX, SP
+            0x39 => {
+                // ADD IX, SP
                 let result = self.ix.wrapping_add(self.sp);
                 self.ix = result;
                 15
             }
-            0x40 => { // LD B, B (undocumented)
+            0x40 => {
+                // LD B, B (undocumented)
                 // flags unchanged
                 8
             }
-            0x41 => { // LD B, C (undocumented)
+            0x41 => {
+                // LD B, C (undocumented)
                 self.b = self.c;
                 // flags unchanged
                 8
             }
-            0x42 => { // LD B, D (undocumented)
+            0x42 => {
+                // LD B, D (undocumented)
                 self.b = self.d;
                 // flags unchanged
                 8
             }
-            0x43 => { // LD B, E (undocumented)
+            0x43 => {
+                // LD B, E (undocumented)
                 self.b = self.e;
                 // flags unchanged
                 8
             }
-            0x44 => { // LD B, IXH (undocumented)
+            0x44 => {
+                // LD B, IXH (undocumented)
                 self.b = (self.ix >> 8) as u8;
                 // flags unchanged
                 8
             }
-            0x45 => { // LD B, IXL (undocumented)
+            0x45 => {
+                // LD B, IXL (undocumented)
                 self.b = self.ix as u8;
                 // flags unchanged
                 8
             }
-            0x46 => { // LD B, (IX+d)
+            0x46 => {
+                // LD B, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.b = bus.read_byte(addr);
                 // flags unchanged
                 19
             }
-            0x47 => { // LD B, A (undocumented)
+            0x47 => {
+                // LD B, A (undocumented)
                 self.b = self.a;
                 // flags unchanged
                 8
             }
-            0x48 => { // LD C, B (undocumented)
+            0x48 => {
+                // LD C, B (undocumented)
                 self.c = self.b;
                 // flags unchanged
                 8
             }
-            0x49 => { // LD C, C (undocumented)
+            0x49 => {
+                // LD C, C (undocumented)
                 // flags unchanged
                 8
             }
-            0x4A => { // LD C, D (undocumented)
+            0x4A => {
+                // LD C, D (undocumented)
                 self.c = self.d;
                 // flags unchanged
                 8
             }
-            0x4B => { // LD C, E (undocumented)
+            0x4B => {
+                // LD C, E (undocumented)
                 self.c = self.e;
                 // flags unchanged
                 8
             }
-            0x4C => { // LD C, IXH (undocumented)
+            0x4C => {
+                // LD C, IXH (undocumented)
                 self.c = (self.ix >> 8) as u8;
                 8
             }
-            0x4D => { // LD C, IXL (undocumented)
+            0x4D => {
+                // LD C, IXL (undocumented)
                 self.c = self.ix as u8;
                 8
             }
-            0x4E => { // LD C, (IX+d)
+            0x4E => {
+                // LD C, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.c = bus.read_byte(addr);
                 19
             }
-            0x4F => { // LD C, A (undocumented)
+            0x4F => {
+                // LD C, A (undocumented)
                 self.c = self.a;
                 // flags unchanged
                 8
             }
-            0x50 => { // LD D, B (undocumented)
+            0x50 => {
+                // LD D, B (undocumented)
                 self.d = self.b;
                 // flags unchanged
                 8
             }
-            0x51 => { // LD D, C (undocumented)
+            0x51 => {
+                // LD D, C (undocumented)
                 self.d = self.c;
                 // flags unchanged
                 8
             }
-            0x52 => { // LD D, D (undocumented)
+            0x52 => {
+                // LD D, D (undocumented)
                 // flags unchanged
                 8
             }
-            0x53 => { // LD D, E (undocumented)
+            0x53 => {
+                // LD D, E (undocumented)
                 self.d = self.e;
                 // flags unchanged
                 8
             }
-            0x54 => { // LD D, IXH (undocumented)
+            0x54 => {
+                // LD D, IXH (undocumented)
                 self.d = (self.ix >> 8) as u8;
                 // flags unchanged
                 8
             }
-            0x55 => { // LD D, IXL (undocumented)
+            0x55 => {
+                // LD D, IXL (undocumented)
                 self.d = self.ix as u8;
                 // flags unchanged
                 8
             }
-            0x56 => { // LD D, (IX+d)
+            0x56 => {
+                // LD D, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.d = bus.read_byte(addr);
                 // flags unchanged
                 19
             }
-            0x57 => { // LD D, A (undocumented)
+            0x57 => {
+                // LD D, A (undocumented)
                 self.d = self.a;
                 // flags unchanged
                 8
             }
-            0x58 => { // LD E, B (undocumented)
+            0x58 => {
+                // LD E, B (undocumented)
                 self.e = self.b;
                 8
             }
-            0x59 => { // LD E, C (undocumented)
+            0x59 => {
+                // LD E, C (undocumented)
                 self.e = self.c;
                 8
             }
-            0x5A => { // LD E, D (undocumented)
+            0x5A => {
+                // LD E, D (undocumented)
                 self.e = self.d;
                 8
             }
-            0x5B => { // LD E, E (undocumented)
+            0x5B => {
+                // LD E, E (undocumented)
                 // flags unchanged
                 8
             }
-            0x5C => { // LD E, IXH (undocumented)
+            0x5C => {
+                // LD E, IXH (undocumented)
                 self.e = (self.ix >> 8) as u8;
                 8
             }
-            0x5D => { // LD E, IXL (undocumented)
+            0x5D => {
+                // LD E, IXL (undocumented)
                 self.e = self.ix as u8;
                 8
             }
-            0x5E => { // LD E, (IX+d)
+            0x5E => {
+                // LD E, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.e = bus.read_byte(addr);
                 19
             }
-            0x5F => { // LD E, A (undocumented)
+            0x5F => {
+                // LD E, A (undocumented)
                 self.e = self.a;
                 // flags unchanged
                 8
             }
-            0x60 => { // LD IXH, B (undocumented)
+            0x60 => {
+                // LD IXH, B (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.b as u16) << 8);
                 8
             }
-            0x61 => { // LD IXH, C (undocumented)
+            0x61 => {
+                // LD IXH, C (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.c as u16) << 8);
                 8
             }
-            0x62 => { // LD IXH, D (undocumented)
+            0x62 => {
+                // LD IXH, D (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.d as u16) << 8);
                 8
             }
-            0x63 => { // LD IXH, E (undocumented)
+            0x63 => {
+                // LD IXH, E (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.e as u16) << 8);
                 8
             }
-            0x64 => { // LD IXH, IXH (undocumented)
+            0x64 => {
+                // LD IXH, IXH (undocumented)
                 // No-op
                 8
             }
-            0x65 => { // LD IXH, IXL (undocumented)
+            0x65 => {
+                // LD IXH, IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.ix = (self.ix & 0x00FF) | ((ixl as u16) << 8);
                 8
             }
-            0x66 => { // LD H, (IX+d)
+            0x66 => {
+                // LD H, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.h = bus.read_byte(addr);
                 19
             }
-            0x67 => { // LD IXH, A (undocumented)
+            0x67 => {
+                // LD IXH, A (undocumented)
                 self.ix = (self.ix & 0x00FF) | ((self.a as u16) << 8);
                 8
             }
-            0x68 => { // LD IXL, B (undocumented)
+            0x68 => {
+                // LD IXL, B (undocumented)
                 self.ix = (self.ix & 0xFF00) | self.b as u16;
                 8
             }
-            0x69 => { // LD IXL, C (undocumented)
+            0x69 => {
+                // LD IXL, C (undocumented)
                 self.ix = (self.ix & 0xFF00) | self.c as u16;
                 8
             }
-            0x6A => { // LD IXL, D (undocumented)
+            0x6A => {
+                // LD IXL, D (undocumented)
                 self.ix = (self.ix & 0xFF00) | self.d as u16;
                 8
             }
-            0x6B => { // LD IXL, E (undocumented)
+            0x6B => {
+                // LD IXL, E (undocumented)
                 self.ix = (self.ix & 0xFF00) | self.e as u16;
                 8
             }
-            0x6C => { // LD IXL, IXH (undocumented)
+            0x6C => {
+                // LD IXL, IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.ix = (self.ix & 0xFF00) | ixh as u16;
                 8
             }
-            0x6D => { // LD IXL, IXL (undocumented)
+            0x6D => {
+                // LD IXL, IXL (undocumented)
                 // No-op
                 8
             }
-            0x6E => { // LD L, (IX+d)
+            0x6E => {
+                // LD L, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.l = bus.read_byte(addr);
                 19
             }
-            0x6F => { // LD IXL, A (undocumented)
+            0x6F => {
+                // LD IXL, A (undocumented)
                 self.ix = (self.ix & 0xFF00) | self.a as u16;
                 8
             }
-            0x70 => { // LD (IX+d), B
+            0x70 => {
+                // LD (IX+d), B
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.b);
                 19
             }
-            0x71 => { // LD (IX+d), C
+            0x71 => {
+                // LD (IX+d), C
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.c);
                 19
             }
-            0x72 => { // LD (IX+d), D
+            0x72 => {
+                // LD (IX+d), D
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.d);
                 19
             }
-            0x73 => { // LD (IX+d), E
+            0x73 => {
+                // LD (IX+d), E
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.e);
                 19
             }
-            0x74 => { // LD (IX+d), H
+            0x74 => {
+                // LD (IX+d), H
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.h);
                 19
             }
-            0x75 => { // LD (IX+d), L
+            0x75 => {
+                // LD (IX+d), L
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.l);
                 19
             }
-            0x77 => { // LD (IX+d), A
+            0x77 => {
+                // LD (IX+d), A
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 bus.write_byte(addr, self.a);
                 19
             }
-            0x78 => { // LD A, B (undocumented)
+            0x78 => {
+                // LD A, B (undocumented)
                 self.a = self.b;
                 // flags unchanged
                 8
             }
-            0x79 => { // LD A, C (undocumented)
+            0x79 => {
+                // LD A, C (undocumented)
                 self.a = self.c;
                 // flags unchanged
                 8
             }
-            0x7A => { // LD A, D (undocumented)
+            0x7A => {
+                // LD A, D (undocumented)
                 self.a = self.d;
                 // flags unchanged
                 8
             }
-            0x7B => { // LD A, E (undocumented)
+            0x7B => {
+                // LD A, E (undocumented)
                 self.a = self.e;
                 // flags unchanged
                 8
             }
-            0x7C => { // LD A, IXH (undocumented)
+            0x7C => {
+                // LD A, IXH (undocumented)
                 self.a = (self.ix >> 8) as u8;
                 8
             }
-            0x7D => { // LD A, IXL (undocumented)
+            0x7D => {
+                // LD A, IXL (undocumented)
                 self.a = self.ix as u8;
                 8
             }
-            0x7E => { // LD A, (IX+d)
+            0x7E => {
+                // LD A, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 self.a = bus.read_byte(addr);
                 19
             }
-            0x7F => { // LD A, A (undocumented)
+            0x7F => {
+                // LD A, A (undocumented)
                 // flags unchanged
                 8
             }
-            0x84 => { // ADD A, IXH (undocumented)
+            0x84 => {
+                // ADD A, IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as u16 + ixh as u16;
                 self.set_flags_add(self.a, ixh, result);
                 self.a = result as u8;
                 8
             }
-            0x85 => { // ADD A, IXL (undocumented)
+            0x85 => {
+                // ADD A, IXL (undocumented)
                 let ixl = self.ix as u8;
                 let result = self.a as u16 + ixl as u16;
                 self.set_flags_add(self.a, ixl, result);
                 self.a = result as u8;
                 8
             }
-            0x86 => { // ADD A, (IX+d)
+            0x86 => {
+                // ADD A, (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -3567,7 +4159,8 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x8C => { // ADC A, IXH (undocumented)
+            0x8C => {
+                // ADC A, IXH (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as u16 + ixh as u16 + carry;
@@ -3575,7 +4168,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x8D => { // ADC A, IXL (undocumented)
+            0x8D => {
+                // ADC A, IXL (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let ixl = self.ix as u8;
                 let result = self.a as u16 + ixl as u16 + carry;
@@ -3583,7 +4177,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x8E => { // ADC A, (IX+d)
+            0x8E => {
+                // ADC A, (IX+d)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
@@ -3593,21 +4188,24 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x94 => { // SUB IXH (undocumented)
+            0x94 => {
+                // SUB IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as i16 - ixh as i16;
                 self.set_flags_sub(self.a, ixh, result);
                 self.a = result as u8;
                 8
             }
-            0x95 => { // SUB IXL (undocumented)
+            0x95 => {
+                // SUB IXL (undocumented)
                 let ixl = self.ix as u8;
                 let result = self.a as i16 - ixl as i16;
                 self.set_flags_sub(self.a, ixl, result);
                 self.a = result as u8;
                 8
             }
-            0x96 => { // SUB (IX+d)
+            0x96 => {
+                // SUB (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -3616,7 +4214,8 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x9C => { // SBC A, IXH (undocumented)
+            0x9C => {
+                // SBC A, IXH (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as i16 - ixh as i16 - carry;
@@ -3624,7 +4223,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x9D => { // SBC A, IXL (undocumented)
+            0x9D => {
+                // SBC A, IXL (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let ixl = self.ix as u8;
                 let result = self.a as i16 - ixl as i16 - carry;
@@ -3632,7 +4232,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x9E => { // SBC A, (IX+d)
+            0x9E => {
+                // SBC A, (IX+d)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
@@ -3642,79 +4243,130 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0xA4 => { // AND IXH (undocumented)
+            0xA4 => {
+                // AND IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a &= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xA5 => { // AND IXL (undocumented)
+            0xA5 => {
+                // AND IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a &= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xA6 => { // AND (IX+d)
+            0xA6 => {
+                // AND (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a &= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xAC => { // XOR IXH (undocumented)
+            0xAC => {
+                // XOR IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a ^= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xAD => { // XOR IXL (undocumented)
+            0xAD => {
+                // XOR IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a ^= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xAE => { // XOR (IX+d)
+            0xAE => {
+                // XOR (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a ^= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xB4 => { // OR IXH (undocumented)
+            0xB4 => {
+                // OR IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a |= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xB5 => { // OR IXL (undocumented)
+            0xB5 => {
+                // OR IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a |= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xB6 => { // OR (IX+d)
+            0xB6 => {
+                // OR (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a |= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xBC => { // CP IXH (undocumented)
+            0xBC => {
+                // CP IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as i16 - ixh as i16;
                 self.set_flags_sub(self.a, ixh, result);
                 8
             }
-            0xBD => { // CP IXL (undocumented)
+            0xBD => {
+                // CP IXL (undocumented)
                 let ixl = self.ix as u8;
                 let result = self.a as i16 - ixl as i16;
                 self.set_flags_sub(self.a, ixl, result);
                 8
             }
-            0xBE => { // CP (IX+d)
+            0xBE => {
+                // CP (IX+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -3722,28 +4374,34 @@ impl Z80 {
                 self.set_flags_sub(self.a, val, result);
                 19
             }
-            0xCB => { // DD CB prefix
+            0xCB => {
+                // DD CB prefix
                 self.step_ddcb(bus)
             }
-            0xE1 => { // POP IX
+            0xE1 => {
+                // POP IX
                 self.ix = self.pop(bus);
                 14
             }
-            0xE3 => { // EX (SP), IX
+            0xE3 => {
+                // EX (SP), IX
                 let sp_val = self.pop(bus);
                 self.push(bus, self.ix);
                 self.ix = sp_val;
                 23
             }
-            0xE5 => { // PUSH IX
+            0xE5 => {
+                // PUSH IX
                 self.push(bus, self.ix);
                 15
             }
-            0xE9 => { // JP (IX)
+            0xE9 => {
+                // JP (IX)
                 self.pc = self.ix;
                 8
             }
-            0xF9 => { // LD SP, IX
+            0xF9 => {
+                // LD SP, IX
                 self.sp = self.ix;
                 10
             }
@@ -3758,76 +4416,143 @@ impl Z80 {
         let addr = self.ix.wrapping_add(d as u16);
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x06 => { // RLC (IX+d)
+            0x06 => {
+                // RLC (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_left(1);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x0E => { // RRC (IX+d)
+            0x0E => {
+                // RRC (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_right(1);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x16 => { // RL (IX+d)
+            0x16 => {
+                // RL (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x1E => { // RR (IX+d)
+            0x1E => {
+                // RR (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x26 => { // SLA (IX+d)
+            0x26 => {
+                // SLA (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = val << 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x2E => { // SRA (IX+d)
+            0x2E => {
+                // SRA (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val >> 1) | (val & 0x80);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x36 => { // SLL (IX+d)
+            0x36 => {
+                // SLL (IX+d)
                 let val = bus.read_byte(addr);
-                let new_val = val << 1  | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = val << 1 | (if (self.f & F_C) != 0 { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x3E => { // SRL (IX+d)
+            0x3E => {
+                // SRL (IX+d)
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IX+d)
+            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
+                // BIT b, (IX+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 self.set_flags_bit(val, bit);
                 20
             }
-            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IX+d)
+            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
+                // RES b, (IX+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 let new_val = val & !(1 << bit);
                 bus.write_byte(addr, new_val);
                 23
             }
-            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => { // SET b, (IX+d)
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => {
+                // SET b, (IX+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 let new_val = val | (1 << bit);
@@ -3844,83 +4569,98 @@ impl Z80 {
     fn step_fd(&mut self, bus: &mut dyn Bus) -> u32 {
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x09 => { // ADD IY, BC
+            0x09 => {
+                // ADD IY, BC
                 let result = self.iy.wrapping_add(self.get_bc());
                 self.iy = result;
                 15
             }
-            0x19 => { // ADD IY, DE
+            0x19 => {
+                // ADD IY, DE
                 let result = self.iy.wrapping_add(self.get_de());
                 self.iy = result;
                 15
             }
-            0x21 => { // LD IY, nn
+            0x21 => {
+                // LD IY, nn
                 self.iy = self.read_word_pc(bus);
                 14
             }
-            0x22 => { // LD (nn), IY
+            0x22 => {
+                // LD (nn), IY
                 let nn = self.read_word_pc(bus);
                 bus.write_byte(nn, self.iy as u8);
                 bus.write_byte(nn.wrapping_add(1), (self.iy >> 8) as u8);
                 20
             }
-            0x23 => { // INC IY
+            0x23 => {
+                // INC IY
                 self.iy = self.iy.wrapping_add(1);
                 10
             }
-            0x24 => { // INC IYH (undocumented)
+            0x24 => {
+                // INC IYH (undocumented)
                 let result = ((self.iy >> 8) as u8).wrapping_add(1);
                 self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
                 self.set_flags_add(result, 1, result as u16);
                 self.f &= !F_N;
                 8
             }
-            0x25 => { // DEC IYH (undocumented)
+            0x25 => {
+                // DEC IYH (undocumented)
                 let result = ((self.iy >> 8) as u8).wrapping_sub(1);
                 self.iy = (self.iy & 0x00FF) | ((result as u16) << 8);
                 self.set_flags_sub(result, 1, result as i16);
                 8
             }
-            0x26 => { // LD IYH, n (undocumented)
+            0x26 => {
+                // LD IYH, n (undocumented)
                 let n = self.read_byte_pc(bus);
                 self.iy = (self.iy & 0x00FF) | ((n as u16) << 8);
                 11
             }
-            0x29 => { // ADD IY, IY
+            0x29 => {
+                // ADD IY, IY
                 let result = self.iy.wrapping_add(self.iy);
                 self.iy = result;
                 15
             }
-            0x2A => { // LD IY, (nn)
+            0x2A => {
+                // LD IY, (nn)
                 let nn = self.read_word_pc(bus);
                 let low = bus.read_byte(nn);
                 let high = bus.read_byte(nn.wrapping_add(1));
                 self.iy = (high as u16) << 8 | low as u16;
                 20
             }
-            0x2B => { // DEC IY
+            0x2B => {
+                // DEC IY
                 self.iy = self.iy.wrapping_sub(1);
                 10
             }
-            0x2C => { // INC IYL (undocumented)
+            0x2C => {
+                // INC IYL (undocumented)
                 let result = (self.iy as u8).wrapping_add(1);
                 self.iy = (self.iy & 0xFF00) | result as u16;
                 self.set_flags_add(result, 1, result as u16);
                 self.f &= !F_N;
                 8
             }
-            0x2D => { // DEC IYL (undocumented)
+            0x2D => {
+                // DEC IYL (undocumented)
                 let result = (self.iy as u8).wrapping_sub(1);
                 self.iy = (self.iy & 0xFF00) | result as u16;
                 self.set_flags_sub(result, 1, result as i16);
                 8
             }
-            0x2E => { // LD IYL, n (undocumented)
+            0x2E => {
+                // LD IYL, n (undocumented)
                 let n = self.read_byte_pc(bus);
                 self.iy = (self.iy & 0xFF00) | n as u16;
                 11
             }
-            0x34 => { // INC (IY+d)
+            0x34 => {
+                // INC (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_add(1);
@@ -3928,7 +4668,8 @@ impl Z80 {
                 self.set_flags_inc_r8(val);
                 23
             }
-            0x35 => { // DEC (IY+d)
+            0x35 => {
+                // DEC (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr).wrapping_sub(1);
@@ -3936,365 +4677,437 @@ impl Z80 {
                 self.set_flags_dec_r8(val);
                 23
             }
-            0x36 => { // LD (IY+d), n
+            0x36 => {
+                // LD (IY+d), n
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let n = self.read_byte_pc(bus);
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, n);
                 19
             }
-            0x39 => { // ADD IY, SP
+            0x39 => {
+                // ADD IY, SP
                 let result = self.iy.wrapping_add(self.sp);
                 self.iy = result;
                 15
             }
-            0x40 => { // LD B, B (undocumented)
+            0x40 => {
+                // LD B, B (undocumented)
                 // flags unchanged
                 8
             }
-            0x41 => { // LD B, C (undocumented)
+            0x41 => {
+                // LD B, C (undocumented)
                 self.b = self.c;
                 // flags unchanged
                 8
             }
-            0x42 => { // LD B, D (undocumented)
+            0x42 => {
+                // LD B, D (undocumented)
                 self.b = self.d;
                 // flags unchanged
                 8
             }
-            0x43 => { // LD B, E (undocumented)
+            0x43 => {
+                // LD B, E (undocumented)
                 self.b = self.e;
                 // flags unchanged
                 8
             }
-            0x44 => { // LD B, IYH (undocumented)
+            0x44 => {
+                // LD B, IYH (undocumented)
                 self.b = (self.iy >> 8) as u8;
                 8
             }
-            0x45 => { // LD B, IYL (undocumented)
+            0x45 => {
+                // LD B, IYL (undocumented)
                 self.b = self.iy as u8;
                 8
             }
-            0x46 => { // LD B, (IY+d)
+            0x46 => {
+                // LD B, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.b = bus.read_byte(addr);
                 19
             }
-            0x47 => { // LD B, A (undocumented)
+            0x47 => {
+                // LD B, A (undocumented)
                 self.b = self.a;
                 // flags unchanged
                 8
             }
-            0x48 => { // LD C, B (undocumented)
+            0x48 => {
+                // LD C, B (undocumented)
                 self.c = self.b;
                 // flags unchanged
                 8
             }
-            0x49 => { // LD C, C (undocumented)
+            0x49 => {
+                // LD C, C (undocumented)
                 // flags unchanged
                 8
             }
-            0x4A => { // LD C, D (undocumented)
+            0x4A => {
+                // LD C, D (undocumented)
                 self.c = self.d;
                 // flags unchanged
                 8
             }
-            0x4B => { // LD C, E (undocumented)
+            0x4B => {
+                // LD C, E (undocumented)
                 self.c = self.e;
                 // flags unchanged
                 8
             }
-            0x4C => { // LD C, IYH (undocumented)
+            0x4C => {
+                // LD C, IYH (undocumented)
                 self.c = (self.iy >> 8) as u8;
                 // flags unchanged
                 8
             }
-            0x4D => { // LD C, IYL (undocumented)
+            0x4D => {
+                // LD C, IYL (undocumented)
                 self.c = self.iy as u8;
                 // flags unchanged
                 8
             }
-            0x4E => { // LD C, (IY+d)
+            0x4E => {
+                // LD C, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.c = bus.read_byte(addr);
                 // flags unchanged
                 19
             }
-            0x4F => { // LD C, A (undocumented)
+            0x4F => {
+                // LD C, A (undocumented)
                 self.c = self.a;
                 // flags unchanged
                 8
             }
-            0x50 => { // LD D, B (undocumented)
+            0x50 => {
+                // LD D, B (undocumented)
                 self.d = self.b;
                 // flags unchanged
                 8
             }
-            0x51 => { // LD D, C (undocumented)
+            0x51 => {
+                // LD D, C (undocumented)
                 self.d = self.c;
                 // flags unchanged
                 8
             }
-            0x52 => { // LD D, D (undocumented)
+            0x52 => {
+                // LD D, D (undocumented)
                 // flags unchanged
                 8
             }
-            0x53 => { // LD D, E (undocumented)
+            0x53 => {
+                // LD D, E (undocumented)
                 self.d = self.e;
                 // flags unchanged
                 8
             }
-            0x54 => { // LD D, IYH (undocumented)
+            0x54 => {
+                // LD D, IYH (undocumented)
                 self.d = (self.iy >> 8) as u8;
                 // flags unchanged
                 8
             }
-            0x55 => { // LD D, IYL (undocumented)
+            0x55 => {
+                // LD D, IYL (undocumented)
                 self.d = self.iy as u8;
                 // flags unchanged
                 8
             }
-            0x56 => { // LD D, (IY+d)
+            0x56 => {
+                // LD D, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.d = bus.read_byte(addr);
                 // flags unchanged
                 19
             }
-            0x57 => { // LD D, A (undocumented)
+            0x57 => {
+                // LD D, A (undocumented)
                 self.d = self.a;
                 // flags unchanged
                 8
             }
-            0x58 => { // LD E, B (undocumented)
+            0x58 => {
+                // LD E, B (undocumented)
                 self.e = self.b;
                 // flags unchanged
                 8
             }
-            0x59 => { // LD E, C (undocumented)
+            0x59 => {
+                // LD E, C (undocumented)
                 self.e = self.c;
                 // flags unchanged
                 8
             }
-            0x5A => { // LD E, D (undocumented)
+            0x5A => {
+                // LD E, D (undocumented)
                 self.e = self.d;
                 // flags unchanged
                 8
             }
-            0x5B => { // LD E, E (undocumented)
+            0x5B => {
+                // LD E, E (undocumented)
                 // flags unchanged
                 8
             }
-            0x5C => { // LD E, IYH (undocumented)
+            0x5C => {
+                // LD E, IYH (undocumented)
                 self.e = (self.iy >> 8) as u8;
                 // flags unchanged
                 8
             }
-            0x5D => { // LD E, IYL (undocumented)
+            0x5D => {
+                // LD E, IYL (undocumented)
                 self.e = self.iy as u8;
                 // flags unchanged
                 8
             }
-            0x5E => { // LD E, (IY+d)
+            0x5E => {
+                // LD E, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.e = bus.read_byte(addr);
                 // flags unchanged
                 19
             }
-            0x5F => { // LD E, A (undocumented)
+            0x5F => {
+                // LD E, A (undocumented)
                 self.e = self.a;
                 // flags unchanged
                 8
             }
-            0x60 => { // LD IYH, B (undocumented)
+            0x60 => {
+                // LD IYH, B (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.b as u16) << 8);
 
                 8
             }
-            0x61 => { // LD IYH, C (undocumented)
+            0x61 => {
+                // LD IYH, C (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.c as u16) << 8);
                 8
             }
-            0x62 => { // LD IYH, D (undocumented)
+            0x62 => {
+                // LD IYH, D (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.d as u16) << 8);
                 8
             }
-            0x63 => { // LD IYH, E (undocumented)
+            0x63 => {
+                // LD IYH, E (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.e as u16) << 8);
                 8
             }
-            0x64 => { // LD IYH, IYH (undocumented)
+            0x64 => {
+                // LD IYH, IYH (undocumented)
                 // No-op
                 8
             }
-            0x65 => { // LD IYH, IYL (undocumented)
+            0x65 => {
+                // LD IYH, IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.iy = (self.iy & 0x00FF) | ((iyl as u16) << 8);
                 8
             }
-            0x66 => { // LD H, (IY+d)
+            0x66 => {
+                // LD H, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.h = bus.read_byte(addr);
                 19
             }
-            0x67 => { // LD IYH, A (undocumented)
+            0x67 => {
+                // LD IYH, A (undocumented)
                 self.iy = (self.iy & 0x00FF) | ((self.a as u16) << 8);
                 8
             }
-            0x68 => { // LD IYL, B (undocumented)
+            0x68 => {
+                // LD IYL, B (undocumented)
                 self.iy = (self.iy & 0xFF00) | self.b as u16;
                 8
             }
-            0x69 => { // LD IYL, C (undocumented)
+            0x69 => {
+                // LD IYL, C (undocumented)
                 self.iy = (self.iy & 0xFF00) | self.c as u16;
                 8
             }
-            0x6A => { // LD IYL, D (undocumented)
+            0x6A => {
+                // LD IYL, D (undocumented)
                 self.iy = (self.iy & 0xFF00) | self.d as u16;
                 8
             }
-            0x6B => { // LD IYL, E (undocumented)
+            0x6B => {
+                // LD IYL, E (undocumented)
                 self.iy = (self.iy & 0xFF00) | self.e as u16;
                 8
             }
-            0x6C => { // LD IYL, IYH (undocumented)
+            0x6C => {
+                // LD IYL, IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.iy = (self.iy & 0xFF00) | iyh as u16;
                 8
             }
-            0x6D => { // LD IYL, IYL (undocumented)
+            0x6D => {
+                // LD IYL, IYL (undocumented)
                 // No-op
                 8
             }
-            0x6E => { // LD L, (IY+d)
+            0x6E => {
+                // LD L, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.l = bus.read_byte(addr);
                 19
             }
-            0x6F => { // LD IYL, A (undocumented)
+            0x6F => {
+                // LD IYL, A (undocumented)
                 self.iy = (self.iy & 0xFF00) | self.a as u16;
                 8
             }
-            0x70 => { // LD (IY+d), B
+            0x70 => {
+                // LD (IY+d), B
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.b);
                 19
             }
-            0x71 => { // LD (IY+d), C
+            0x71 => {
+                // LD (IY+d), C
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.c);
                 19
             }
-            0x72 => { // LD (IY+d), D
+            0x72 => {
+                // LD (IY+d), D
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.d);
                 19
             }
-            0x73 => { // LD (IY+d), E
+            0x73 => {
+                // LD (IY+d), E
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.e);
                 19
             }
-            0x74 => { // LD (IY+d), H
+            0x74 => {
+                // LD (IY+d), H
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.h);
                 19
             }
-            0x75 => { // LD (IY+d), L
+            0x75 => {
+                // LD (IY+d), L
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.l);
                 19
             }
-            0x77 => { // LD (IY+d), A
+            0x77 => {
+                // LD (IY+d), A
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 bus.write_byte(addr, self.a);
                 19
             }
-            0x78 => { // LD A, B (undocumented)
+            0x78 => {
+                // LD A, B (undocumented)
                 self.a = self.b;
                 // flags unchanged
                 8
             }
-            0x79 => { // LD A, C (undocumented)
+            0x79 => {
+                // LD A, C (undocumented)
                 self.a = self.c;
                 // flags unchanged
                 8
             }
-            0x7A => { // LD A, D (undocumented)
+            0x7A => {
+                // LD A, D (undocumented)
                 self.a = self.d;
                 // flags unchanged
                 8
             }
-            0x7B => { // LD A, E (undocumented)
+            0x7B => {
+                // LD A, E (undocumented)
                 self.a = self.e;
                 // flags unchanged
                 8
             }
-            0x7C => { // LD A, IYH (undocumented)
+            0x7C => {
+                // LD A, IYH (undocumented)
                 self.a = (self.iy >> 8) as u8;
                 8
             }
-            0x7D => { // LD A, IYL (undocumented)
+            0x7D => {
+                // LD A, IYL (undocumented)
                 self.a = self.iy as u8;
                 8
             }
-            0x7E => { // LD A, (IY+d)
+            0x7E => {
+                // LD A, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 self.a = bus.read_byte(addr);
                 19
             }
-            0x7F => { // LD A, A (undocumented)
+            0x7F => {
+                // LD A, A (undocumented)
                 // flags unchanged
                 8
             }
-            0x80 => { // ADD A, B (undocumented)
+            0x80 => {
+                // ADD A, B (undocumented)
                 self.a = self.add8(self.a, self.b);
                 // flags updated above
                 8
             }
-            0x81 => { // ADD A, C (undocumented)
+            0x81 => {
+                // ADD A, C (undocumented)
                 self.a = self.add8(self.a, self.c);
                 // flags updated above
                 8
             }
-            0x82 => { // ADD A, D (undocumented)
+            0x82 => {
+                // ADD A, D (undocumented)
                 self.a = self.add8(self.a, self.d);
                 // flags updated above
                 8
             }
-            0x83 => { // ADD A, E (undocumented)
+            0x83 => {
+                // ADD A, E (undocumented)
                 self.a = self.add8(self.a, self.e);
                 // flags updated above
                 8
             }
-            0x84 => { // ADD A, IYH (undocumented)
+            0x84 => {
+                // ADD A, IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as u16 + iyh as u16;
                 self.set_flags_add(self.a, iyh, result);
                 self.a = result as u8;
                 8
             }
-            0x85 => { // ADD A, IYL (undocumented)
+            0x85 => {
+                // ADD A, IYL (undocumented)
                 let iyl = self.iy as u8;
                 let result = self.a as u16 + iyl as u16;
                 self.set_flags_add(self.a, iyl, result);
                 self.a = result as u8;
                 8
             }
-            0x86 => { // ADD A, (IY+d)
+            0x86 => {
+                // ADD A, (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -4303,12 +5116,14 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x87 => { // ADD A, A (undocumented)
+            0x87 => {
+                // ADD A, A (undocumented)
                 self.a = self.add8(self.a, self.a);
                 // flags updated above
                 8
             }
-            0x8C => { // ADC A, IYH (undocumented)
+            0x8C => {
+                // ADC A, IYH (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as u16 + iyh as u16 + carry;
@@ -4316,7 +5131,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x8D => { // ADC A, IYL (undocumented)
+            0x8D => {
+                // ADC A, IYL (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let iyl = self.iy as u8;
                 let result = self.a as u16 + iyl as u16 + carry;
@@ -4324,7 +5140,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x8E => { // ADC A, (IY+d)
+            0x8E => {
+                // ADC A, (IY+d)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
@@ -4334,21 +5151,24 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x94 => { // SUB IYH (undocumented)
+            0x94 => {
+                // SUB IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as i16 - iyh as i16;
                 self.set_flags_sub(self.a, iyh, result);
                 self.a = result as u8;
                 8
             }
-            0x95 => { // SUB IYL (undocumented)
+            0x95 => {
+                // SUB IYL (undocumented)
                 let iyl = self.iy as u8;
                 let result = self.a as i16 - iyl as i16;
                 self.set_flags_sub(self.a, iyl, result);
                 self.a = result as u8;
                 8
             }
-            0x96 => { // SUB (IY+d)
+            0x96 => {
+                // SUB (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -4357,7 +5177,8 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0x9C => { // SBC A, IYH (undocumented)
+            0x9C => {
+                // SBC A, IYH (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as i16 - iyh as i16 - carry;
@@ -4365,7 +5186,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x9D => { // SBC A, IYL (undocumented)
+            0x9D => {
+                // SBC A, IYL (undocumented)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let iyl = self.iy as u8;
                 let result = self.a as i16 - iyl as i16 - carry;
@@ -4373,7 +5195,8 @@ impl Z80 {
                 self.a = result as u8;
                 8
             }
-            0x9E => { // SBC A, (IY+d)
+            0x9E => {
+                // SBC A, (IY+d)
                 let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
@@ -4383,79 +5206,130 @@ impl Z80 {
                 self.a = result as u8;
                 19
             }
-            0xA4 => { // AND IYH (undocumented)
+            0xA4 => {
+                // AND IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a &= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xA5 => { // AND IYL (undocumented)
+            0xA5 => {
+                // AND IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a &= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xA6 => { // AND (IY+d)
+            0xA6 => {
+                // AND (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a &= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | F_H | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | F_H
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xAC => { // XOR IYH (undocumented)
+            0xAC => {
+                // XOR IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a ^= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xAD => { // XOR IYL (undocumented)
+            0xAD => {
+                // XOR IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a ^= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xAE => { // XOR (IY+d)
+            0xAE => {
+                // XOR (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a ^= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xB4 => { // OR IYH (undocumented)
+            0xB4 => {
+                // OR IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a |= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xB5 => { // OR IYL (undocumented)
+            0xB5 => {
+                // OR IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a |= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 8
             }
-            0xB6 => { // OR (IY+d)
+            0xB6 => {
+                // OR (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a |= val;
-                self.f = if self.a == 0 { F_Z } else { 0 } | if (self.a & 0x80) != 0 { F_S } else { 0 } | if (self.a & 0x20) != 0 { F_Y } else { 0 } | if (self.a & 0x08) != 0 { F_X } else { 0 } | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.f = if self.a == 0 { F_Z } else { 0 }
+                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
+                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
+                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
+                    | if Z80::parity(self.a) { F_PV } else { 0 };
                 19
             }
-            0xBC => { // CP IYH (undocumented)
+            0xBC => {
+                // CP IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as i16 - iyh as i16;
                 self.set_flags_sub(self.a, iyh, result);
                 8
             }
-            0xBD => { // CP IYL (undocumented)
+            0xBD => {
+                // CP IYL (undocumented)
                 let iyl = self.iy as u8;
                 let result = self.a as i16 - iyl as i16;
                 self.set_flags_sub(self.a, iyl, result);
                 8
             }
-            0xBE => { // CP (IY+d)
+            0xBE => {
+                // CP (IY+d)
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -4463,28 +5337,34 @@ impl Z80 {
                 self.set_flags_sub(self.a, val, result);
                 19
             }
-            0xCB => { // FD CB prefix
+            0xCB => {
+                // FD CB prefix
                 self.step_fdcb(bus)
             }
-            0xE1 => { // POP IY
+            0xE1 => {
+                // POP IY
                 self.iy = self.pop(bus);
                 14
             }
-            0xE3 => { // EX (SP), IY
+            0xE3 => {
+                // EX (SP), IY
                 let sp_val = self.pop(bus);
                 self.push(bus, self.iy);
                 self.iy = sp_val;
                 23
             }
-            0xE5 => { // PUSH IY
+            0xE5 => {
+                // PUSH IY
                 self.push(bus, self.iy);
                 15
             }
-            0xE9 => { // JP (IY)
+            0xE9 => {
+                // JP (IY)
                 self.pc = self.iy;
                 8
             }
-            0xF9 => { // LD SP, IY
+            0xF9 => {
+                // LD SP, IY
                 self.sp = self.iy;
                 10
             }
@@ -4499,76 +5379,143 @@ impl Z80 {
         let addr = self.iy.wrapping_add(d as u16);
         let opcode = self.read_byte_pc(bus);
         match opcode {
-            0x06 => { // RLC (IY+d)
+            0x06 => {
+                // RLC (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_left(1);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x0E => { // RRC (IY+d)
+            0x0E => {
+                // RRC (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = val.rotate_right(1);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x16 => { // RL (IY+d)
+            0x16 => {
+                // RL (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x1E => { // RR (IY+d)
+            0x1E => {
+                // RR (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x26 => { // SLA (IY+d)
+            0x26 => {
+                // SLA (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = val << 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x2E => { // SRA (IY+d)
+            0x2E => {
+                // SRA (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = (val >> 1) | (val & 0x80);
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x36 => { // SLL (IY+d)
+            0x36 => {
+                // SLL (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = val << 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x80) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x80) != 0 { F_C } else { 0 });
                 23
             }
-            0x3E => { // SRL (IY+d)
+            0x3E => {
+                // SRL (IY+d)
                 let val = bus.read_byte(addr);
                 let new_val = val >> 1;
                 bus.write_byte(addr, new_val);
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 }) | (if new_val == 0 { F_Z } else { 0 }) | (if new_val.count_ones() % 2 == 0 { F_PV } else { 0 }) | (if (val & 0x01) != 0 { F_C } else { 0 });
+                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
+                    | (if new_val == 0 { F_Z } else { 0 })
+                    | (if new_val.count_ones() % 2 == 0 {
+                        F_PV
+                    } else {
+                        0
+                    })
+                    | (if (val & 0x01) != 0 { F_C } else { 0 });
                 23
             }
-            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => { // BIT b, (IY+d)
+            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
+                // BIT b, (IY+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 self.set_flags_bit(val, bit);
                 20
             }
-            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => { // RES b, (IY+d)
+            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
+                // RES b, (IY+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 let new_val = val & !(1 << bit);
                 bus.write_byte(addr, new_val);
                 23
             }
-            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => { // SET b, (IY+d)
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => {
+                // SET b, (IY+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
                 let new_val = val | (1 << bit);
@@ -4585,8 +5532,8 @@ impl Z80 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crate::emulator::{Bus, Ports};
+    use std::collections::HashMap;
 
     struct TestMachine {
         cpu: Z80,
@@ -4597,14 +5544,18 @@ mod tests {
 
     impl Ports for TestMachine {
         fn read_port(&self, port: u16) -> u8 {
-            if port == 0x00 { 0xFF } else { self.ports.get(&port).copied().unwrap_or(0) }
+            if port == 0x00 {
+                0xFF
+            } else {
+                self.ports.get(&port).copied().unwrap_or(0)
+            }
         }
         fn write_port(&mut self, port: u16, val: u8) {
             self.ports.insert(port, val);
         }
     }
 
-    impl Memory for TestMachine{
+    impl Memory for TestMachine {
         fn read_byte(&self, addr: u16) -> u8 {
             self.ram[addr as usize]
         }
@@ -4626,7 +5577,7 @@ mod tests {
             if let Some(commands) = initial_commands {
                 for (i, &cmd) in commands.iter().enumerate() {
                     machine.ram[i] = cmd;
-                } 
+                }
             }
             machine
         }
@@ -5402,14 +6353,22 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0xCB, 0x47])); // BIT 0, A
         machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 0 is 0. Bit 3 is 1. Bit 5 is 1.
         machine.cpu.f = F_C; // Start with carry set
-        
+
         machine.step();
         assert_eq!(machine.cpu.pc, 2);
         assert_eq!((machine.cpu.f & F_S), 0, "S should be 0");
         assert_ne!((machine.cpu.f & F_Z), 0, "Z should be 1");
-        assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+        assert_eq!(
+            (machine.cpu.f & F_Y),
+            0,
+            "Y should be copied from bit 5 of A if bit 5 is checked"
+        );
         assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-        assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+        assert_eq!(
+            (machine.cpu.f & F_X),
+            0,
+            "X should be copied from bit 3 of A if bit 3 is checked"
+        );
         assert_ne!((machine.cpu.f & F_PV), 0, "PV should be 1");
         assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
         assert_ne!((machine.cpu.f & F_C), 0, "C should be preserved");
@@ -5422,9 +6381,17 @@ mod tests {
         assert_eq!(machine.cpu.pc, 2);
         assert_ne!((machine.cpu.f & F_S), 0, "S should be 1");
         assert_eq!((machine.cpu.f & F_Z), 0, "Z should be 0");
-        assert_eq!((machine.cpu.f & F_Y), 0, "Y should be copied from bit 5 of A if bit 5 is checked");
+        assert_eq!(
+            (machine.cpu.f & F_Y),
+            0,
+            "Y should be copied from bit 5 of A if bit 5 is checked"
+        );
         assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-        assert_eq!((machine.cpu.f & F_X), 0, "X should be copied from bit 3 of A if bit 3 is checked");
+        assert_eq!(
+            (machine.cpu.f & F_X),
+            0,
+            "X should be copied from bit 3 of A if bit 3 is checked"
+        );
         assert_eq!((machine.cpu.f & F_PV), 0, "PV should be 0");
         assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
         assert_eq!((machine.cpu.f & F_C), 0, "C should be preserved");
@@ -5686,7 +6653,7 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
         assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
         assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
-        
+
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
         // X flag (bit 3) is 1, Y flag (bit 5) is 1
@@ -5706,7 +6673,7 @@ mod tests {
         assert_eq!(cycles, 16);
         assert_eq!(machine.cpu.get_hl(), 0x1001);
         assert_eq!(machine.cpu.get_bc(), 1);
-        
+
         assert_eq!(machine.cpu.f & F_S, 0);
         assert_eq!(machine.cpu.f & F_Z, 0);
         assert_eq!(machine.cpu.f & F_H, 0);
@@ -5738,7 +6705,7 @@ mod tests {
         assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
         assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
         assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
-        
+
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
         // X flag (bit 3) is 1, Y flag (bit 5) is 1
@@ -5758,7 +6725,7 @@ mod tests {
         assert_eq!(cycles, 16);
         assert_eq!(machine.cpu.get_hl(), 0x0FFF);
         assert_eq!(machine.cpu.get_bc(), 1);
-        
+
         assert_eq!(machine.cpu.f & F_S, 0);
         assert_eq!(machine.cpu.f & F_Z, F_Z);
         assert_eq!(machine.cpu.f & F_H, 0);
@@ -5786,7 +6753,7 @@ mod tests {
         assert_eq!(machine.cpu.get_bc(), 2);
         assert_eq!(machine.cpu.pc, 0); // still on LDIR
         assert_eq!(total_cycles, 21);
-        
+
         // After 2nd step, bc=1, pc is back to 0
         total_cycles += machine.step();
         assert_eq!(machine.ram[0x2001], 0x22);
@@ -5859,7 +6826,7 @@ mod tests {
         assert_eq!(machine.cpu.get_bc(), 2);
         assert_eq!(machine.cpu.pc, 0); // still on LDDR
         assert_eq!(total_cycles, 21);
-        
+
         // After 2nd step, bc=1, pc is back to 0
         total_cycles += machine.step();
         assert_eq!(machine.ram[0x2001], 0x22);
@@ -6395,5 +7362,21 @@ mod tests {
         assert_eq!(machine.cpu.f & F_X, F_X); // Undocumented X flag set (bit 3 of result is 1)
         assert_eq!(machine.cpu.f & F_Y, F_Y); // Undocumented Y flag set (bit 5 of result is 1)
         assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_ed_42_sbc_hl_bc_flags() {
+        let mut machine = TestMachine::new(Some(vec![0xED, 0x42])); // SBC HL, BC
+        machine.cpu.set_hl(0x8000);
+        machine.cpu.set_bc(0x0001);
+        machine.cpu.f = 0; // No carry
+        machine.step();
+        assert_eq!(machine.cpu.get_hl(), 0x7FFF);
+        assert_eq!(machine.cpu.f & F_S, 0, "S flag incorrect");
+        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag incorrect");
+        assert_eq!(machine.cpu.f & F_H, F_H, "H flag incorrect");
+        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag incorrect"); // 0x8000 - 0x0001 = 0x7fff, overflow
+        assert_eq!(machine.cpu.f & F_N, F_N, "N flag incorrect");
+        assert_eq!(machine.cpu.f & F_C, 0, "C flag incorrect");
     }
 }

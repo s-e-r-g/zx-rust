@@ -2,7 +2,7 @@
 //!
 //! This module provides disassembly functionality for Z80 instructions.
 
-use crate::emulator::{Bus};
+use crate::emulator::Bus;
 
 pub struct Debugger {
     pub enable_disassembler: bool,
@@ -11,7 +11,11 @@ pub struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(enable_disassembler: bool, enable_trace_interrupts: bool, enable_zexall_test: bool) -> Self {
+    pub fn new(
+        enable_disassembler: bool,
+        enable_trace_interrupts: bool,
+        enable_zexall_test: bool,
+    ) -> Self {
         Self {
             enable_disassembler,
             enable_trace_interrupts,
@@ -27,7 +31,11 @@ impl Debugger {
         let reg_idx = cb_opcode & 0x07;
 
         match cb_opcode {
-            0x00..=0x3F => format!("{} {}", bit_op_types[((cb_opcode >> 3) & 0x07) as usize], reg_names_8[reg_idx as usize]),
+            0x00..=0x3F => format!(
+                "{} {}",
+                bit_op_types[((cb_opcode >> 3) & 0x07) as usize],
+                reg_names_8[reg_idx as usize]
+            ),
             0x40..=0x7F => format!("BIT {}, {}", bit, reg_names_8[reg_idx as usize]),
             0x80..=0xBF => format!("RES {}, {}", bit, reg_names_8[reg_idx as usize]),
             0xC0..=0xFF => format!("SET {}, {}", bit, reg_names_8[reg_idx as usize]),
@@ -41,7 +49,10 @@ impl Debugger {
             0x40 => "IN B, (C)".to_string(),
             0x41 => "OUT (C), B".to_string(),
             0x42 => "SBC HL, BC".to_string(),
-            0x43 => { instruction_len = 4; format!("LD ({:04X}), BC", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x43 => {
+                instruction_len = 4;
+                format!("LD ({:04X}), BC", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x44 => "NEG".to_string(),
             0x45 => "RETN".to_string(),
             0x46 => "IM 0".to_string(),
@@ -49,37 +60,58 @@ impl Debugger {
             0x48 => "IN C, (C)".to_string(),
             0x49 => "OUT (C), C".to_string(),
             0x4A => "ADC HL, BC".to_string(),
-            0x4B => { instruction_len = 4; format!("LD BC, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x4B => {
+                instruction_len = 4;
+                format!("LD BC, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x4D => "RETI".to_string(),
             0x4F => "LD R, A".to_string(),
             0x50 => "IN D, (C)".to_string(),
             0x51 => "OUT (C), D".to_string(),
             0x52 => "SBC HL, DE".to_string(),
-            0x53 => { instruction_len = 4; format!("LD ({:04X}), DE", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x53 => {
+                instruction_len = 4;
+                format!("LD ({:04X}), DE", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x56 => "IM 1".to_string(),
             0x57 => "LD A, I".to_string(),
             0x58 => "IN E, (C)".to_string(),
             0x59 => "OUT (C), E".to_string(),
             0x5A => "ADC HL, DE".to_string(),
-            0x5B => { instruction_len = 4; format!("LD DE, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x5B => {
+                instruction_len = 4;
+                format!("LD DE, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x5E => "IM 2".to_string(),
             0x5F => "LD A, R".to_string(),
             0x60 => "IN H, (C)".to_string(),
             0x61 => "OUT (C), H".to_string(),
             0x62 => "SBC HL, HL".to_string(),
-            0x63 => { instruction_len = 4; format!("LD ({:04X}), HL", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x63 => {
+                instruction_len = 4;
+                format!("LD ({:04X}), HL", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x67 => "RRD".to_string(),
             0x68 => "IN L, (C)".to_string(),
             0x69 => "OUT (C), L".to_string(),
             0x6A => "ADC HL, HL".to_string(), // Added ADC HL, HL
-            0x6B => { instruction_len = 4; format!("LD HL, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x6B => {
+                instruction_len = 4;
+                format!("LD HL, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x6F => "RLD".to_string(),
             0x72 => "SBC HL, SP".to_string(),
-            0x73 => { instruction_len = 4; format!("LD ({:04X}), SP", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x73 => {
+                instruction_len = 4;
+                format!("LD ({:04X}), SP", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
             0x78 => "IN A, (C)".to_string(),
             0x79 => "OUT (C), A".to_string(),
             0x7A => "ADC HL, SP".to_string(),
-            0x7B => { instruction_len = 4; format!("LD SP, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)) },
+            0x7B => {
+                instruction_len = 4;
+                format!("LD SP, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2))
+            }
 
             // Block Transfer and Search Instructions
             0xA0 => "LDI".to_string(),
@@ -121,54 +153,189 @@ impl Debugger {
 
         match opcode {
             // 8-bit loads
-            0x06 => { mnemonic = format!("LD B, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x0E => { mnemonic = format!("LD C, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x16 => { mnemonic = format!("LD D, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x1E => { mnemonic = format!("LD E, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x26 => { mnemonic = format!("LD H, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x2E => { mnemonic = format!("LD L, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x36 => { mnemonic = format!("LD (HL), #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0x3E => { mnemonic = format!("LD A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
+            0x06 => {
+                mnemonic = format!("LD B, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x0E => {
+                mnemonic = format!("LD C, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x16 => {
+                mnemonic = format!("LD D, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x1E => {
+                mnemonic = format!("LD E, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x26 => {
+                mnemonic = format!("LD H, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x2E => {
+                mnemonic = format!("LD L, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x36 => {
+                mnemonic = format!("LD (HL), #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0x3E => {
+                mnemonic = format!("LD A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
 
             // 16-bit loads
-            0x01 => { mnemonic = format!("LD BC, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x11 => { mnemonic = format!("LD DE, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x21 => { mnemonic = format!("LD HL, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x31 => { mnemonic = format!("LD SP, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
+            0x01 => {
+                mnemonic = format!("LD BC, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x11 => {
+                mnemonic = format!("LD DE, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x21 => {
+                mnemonic = format!("LD HL, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x31 => {
+                mnemonic = format!("LD SP, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
 
-            0x2A => { mnemonic = format!("LD HL, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x3A => { mnemonic = format!("LD A, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x32 => { mnemonic = format!("LD ({:04X}), A", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0x22 => { mnemonic = format!("LD ({:04X}), HL", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
+            0x2A => {
+                mnemonic = format!("LD HL, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x3A => {
+                mnemonic = format!("LD A, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x32 => {
+                mnemonic = format!("LD ({:04X}), A", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0x22 => {
+                mnemonic = format!("LD ({:04X}), HL", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
 
             // Jumps and calls
-            0xC3 => { mnemonic = format!("JP #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xCD => { mnemonic = format!("CALL #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xC2 => { mnemonic = format!("JP NZ, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xCA => { mnemonic = format!("JP Z, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xD2 => { mnemonic = format!("JP NC, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xDA => { mnemonic = format!("JP C, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xE2 => { mnemonic = format!("JP PO, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xEA => { mnemonic = format!("JP PE, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xF2 => { mnemonic = format!("JP P, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
-            0xFA => { mnemonic = format!("JP M, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1)); instruction_len = 3; }
+            0xC3 => {
+                mnemonic = format!("JP #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xCD => {
+                mnemonic = format!("CALL #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xC2 => {
+                mnemonic = format!("JP NZ, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xCA => {
+                mnemonic = format!("JP Z, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xD2 => {
+                mnemonic = format!("JP NC, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xDA => {
+                mnemonic = format!("JP C, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xE2 => {
+                mnemonic = format!("JP PO, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xEA => {
+                mnemonic = format!("JP PE, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xF2 => {
+                mnemonic = format!("JP P, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
+            0xFA => {
+                mnemonic = format!("JP M, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 1));
+                instruction_len = 3;
+            }
 
-            0x18 => { mnemonic = format!("JR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
-            0x20 => { mnemonic = format!("JR NZ, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
-            0x28 => { mnemonic = format!("JR Z, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
-            0x30 => { mnemonic = format!("JR NC, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
-            0x38 => { mnemonic = format!("JR C, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
-            0x10 => { mnemonic = format!("DJNZ #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8); instruction_len = 2; }
+            0x18 => {
+                mnemonic = format!("JR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1) as i8);
+                instruction_len = 2;
+            }
+            0x20 => {
+                mnemonic = format!(
+                    "JR NZ, #{:02X}",
+                    Self::read_byte_at_pc_offset(bus, pc, 1) as i8
+                );
+                instruction_len = 2;
+            }
+            0x28 => {
+                mnemonic = format!(
+                    "JR Z, #{:02X}",
+                    Self::read_byte_at_pc_offset(bus, pc, 1) as i8
+                );
+                instruction_len = 2;
+            }
+            0x30 => {
+                mnemonic = format!(
+                    "JR NC, #{:02X}",
+                    Self::read_byte_at_pc_offset(bus, pc, 1) as i8
+                );
+                instruction_len = 2;
+            }
+            0x38 => {
+                mnemonic = format!(
+                    "JR C, #{:02X}",
+                    Self::read_byte_at_pc_offset(bus, pc, 1) as i8
+                );
+                instruction_len = 2;
+            }
+            0x10 => {
+                mnemonic = format!(
+                    "DJNZ #{:02X}",
+                    Self::read_byte_at_pc_offset(bus, pc, 1) as i8
+                );
+                instruction_len = 2;
+            }
 
             // ALU ops
-            0xC6 => { mnemonic = format!("ADD A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xCE => { mnemonic = format!("ADC A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xD6 => { mnemonic = format!("SUB #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xDE => { mnemonic = format!("SBC A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xE6 => { mnemonic = format!("AND #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xEE => { mnemonic = format!("XOR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xF6 => { mnemonic = format!("OR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
-            0xFE => { mnemonic = format!("CP #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; }
+            0xC6 => {
+                mnemonic = format!("ADD A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xCE => {
+                mnemonic = format!("ADC A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xD6 => {
+                mnemonic = format!("SUB #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xDE => {
+                mnemonic = format!("SBC A, #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xE6 => {
+                mnemonic = format!("AND #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xEE => {
+                mnemonic = format!("XOR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xF6 => {
+                mnemonic = format!("OR #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
+            0xFE => {
+                mnemonic = format!("CP #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
 
             // Prefixes
             0xCB => {
@@ -180,36 +347,61 @@ impl Debugger {
                 let dd_opcode = bus.read_byte(pc.wrapping_add(1));
                 instruction_len = 2;
                 match dd_opcode {
-                    0x21 => { mnemonic = format!("LD IX, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x22 => { mnemonic = format!("LD ({:04X}), IX", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x2A => { mnemonic = format!("LD IX, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x36 => { mnemonic = format!("LD (IX+{}), #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 2) as i8, Self::read_byte_at_pc_offset(bus, pc, 3)); instruction_len = 4; }
-                    0xCB => { // DDCB prefix
+                    0x21 => {
+                        mnemonic =
+                            format!("LD IX, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x22 => {
+                        mnemonic =
+                            format!("LD ({:04X}), IX", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x2A => {
+                        mnemonic =
+                            format!("LD IX, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x36 => {
+                        mnemonic = format!(
+                            "LD (IX+{}), #{:02X}",
+                            Self::read_byte_at_pc_offset(bus, pc, 2) as i8,
+                            Self::read_byte_at_pc_offset(bus, pc, 3)
+                        );
+                        instruction_len = 4;
+                    }
+                    0xCB => {
+                        // DDCB prefix
                         let d = Self::read_byte_at_pc_offset(bus, pc, 2) as i8;
                         let ddcbc_opcode = Self::read_byte_at_pc_offset(bus, pc, 3);
                         instruction_len = 4;
                         let bit_op_types = ["RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"];
 
                         match ddcbc_opcode {
-                            0x00..=0x3F => { // Rotates and shifts
+                            0x00..=0x3F => {
+                                // Rotates and shifts
                                 let op_type_idx = (ddcbc_opcode >> 3) & 0x07;
-                                mnemonic = format!("{} (IX+{})", bit_op_types[op_type_idx as usize], d);
+                                mnemonic =
+                                    format!("{} (IX+{})", bit_op_types[op_type_idx as usize], d);
                             }
-                            0x40..=0x7F => { // BIT
+                            0x40..=0x7F => {
+                                // BIT
                                 let bit = (ddcbc_opcode >> 3) & 0x07;
                                 mnemonic = format!("BIT {}, (IX+{})", bit, d);
                             }
-                            0x80..=0xBF => { // RES
+                            0x80..=0xBF => {
+                                // RES
                                 let bit = (ddcbc_opcode >> 3) & 0x07;
                                 mnemonic = format!("RES {}, (IX+{})", bit, d);
                             }
-                            0xC0..=0xFF => { // SET
+                            0xC0..=0xFF => {
+                                // SET
                                 let bit = (ddcbc_opcode >> 3) & 0x07;
                                 mnemonic = format!("SET {}, (IX+{})", bit, d);
                             }
                         }
                     }
-                    _ => mnemonic = format!("DD {:02X}", dd_opcode) // Fallback for other DD instructions
+                    _ => mnemonic = format!("DD {:02X}", dd_opcode), // Fallback for other DD instructions
                 }
             }
             0xED => {
@@ -220,44 +412,73 @@ impl Debugger {
                 let fd_opcode = bus.read_byte(pc.wrapping_add(1));
                 instruction_len = 2;
                 match fd_opcode {
-                    0x21 => { mnemonic = format!("LD IY, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x22 => { mnemonic = format!("LD ({:04X}), IY", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x2A => { mnemonic = format!("LD IY, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2)); instruction_len = 4; }
-                    0x36 => { mnemonic = format!("LD (IY+{}), #{:02X}", Self::read_byte_at_pc_offset(bus, pc, 2) as i8, Self::read_byte_at_pc_offset(bus, pc, 3)); instruction_len = 4; }
-                    0xCB => { // FDCB prefix
+                    0x21 => {
+                        mnemonic =
+                            format!("LD IY, #{:04X}", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x22 => {
+                        mnemonic =
+                            format!("LD ({:04X}), IY", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x2A => {
+                        mnemonic =
+                            format!("LD IY, ({:04X})", Self::read_word_at_pc_offset(bus, pc, 2));
+                        instruction_len = 4;
+                    }
+                    0x36 => {
+                        mnemonic = format!(
+                            "LD (IY+{}), #{:02X}",
+                            Self::read_byte_at_pc_offset(bus, pc, 2) as i8,
+                            Self::read_byte_at_pc_offset(bus, pc, 3)
+                        );
+                        instruction_len = 4;
+                    }
+                    0xCB => {
+                        // FDCB prefix
                         let d = Self::read_byte_at_pc_offset(bus, pc, 2) as i8;
                         let fdcb_opcode = Self::read_byte_at_pc_offset(bus, pc, 3);
                         instruction_len = 4;
                         let bit_op_types = ["RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL"];
 
                         match fdcb_opcode {
-                            0x00..=0x3F => { // Rotates and shifts
+                            0x00..=0x3F => {
+                                // Rotates and shifts
                                 let op_type_idx = (fdcb_opcode >> 3) & 0x07;
-                                mnemonic = format!("{} (IY+{})", bit_op_types[op_type_idx as usize], d);
+                                mnemonic =
+                                    format!("{} (IY+{})", bit_op_types[op_type_idx as usize], d);
                             }
-                            0x40..=0x7F => { // BIT
+                            0x40..=0x7F => {
+                                // BIT
                                 let bit = (fdcb_opcode >> 3) & 0x07;
                                 mnemonic = format!("BIT {}, (IY+{})", bit, d);
                             }
-                            0x80..=0xBF => { // RES
+                            0x80..=0xBF => {
+                                // RES
                                 let bit = (fdcb_opcode >> 3) & 0x07;
                                 mnemonic = format!("RES {}, (IY+{})", bit, d);
                             }
-                            0xC0..=0xFF => { // SET
+                            0xC0..=0xFF => {
+                                // SET
                                 let bit = (fdcb_opcode >> 3) & 0x07;
                                 mnemonic = format!("SET {}, (IY+{})", bit, d);
                             }
                         }
                     }
-                    _ => mnemonic = format!("FD {:02X}", fd_opcode) // Fallback for other FD instructions
+                    _ => mnemonic = format!("FD {:02X}", fd_opcode), // Fallback for other FD instructions
                 }
             }
             // General 8-bit register loads (LD r, r')
-            0x40..=0x7F if opcode != 0x76 => { // Exclude HALT
+            0x40..=0x7F if opcode != 0x76 => {
+                // Exclude HALT
                 let r_dest = (opcode >> 3) & 0x07;
                 let r_src = opcode & 0x07;
                 let reg_names = ["B", "C", "D", "E", "H", "L", "(HL)", "A"];
-                mnemonic = format!("LD {}, {}", reg_names[r_dest as usize], reg_names[r_src as usize]);
+                mnemonic = format!(
+                    "LD {}, {}",
+                    reg_names[r_dest as usize], reg_names[r_src as usize]
+                );
             }
             // Other single byte opcodes
             0x00 => mnemonic = "NOP".to_string(),
@@ -378,13 +599,19 @@ impl Debugger {
             0xCF => mnemonic = "RST 08h".to_string(),
             0xD0 => mnemonic = "RET NC".to_string(),
             0xD1 => mnemonic = "POP DE".to_string(),
-            0xD3 => {mnemonic = format!("OUT ({:02X}), A", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; },
+            0xD3 => {
+                mnemonic = format!("OUT ({:02X}), A", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
             0xD4 => mnemonic = "CALL NC, nn".to_string(),
             0xD5 => mnemonic = "PUSH DE".to_string(),
             0xD7 => mnemonic = "RST 10h".to_string(),
             0xD8 => mnemonic = "RET C".to_string(),
             0xD9 => mnemonic = "EXX".to_string(),
-            0xDB => {mnemonic = format!("IN A, ({:02X})", Self::read_byte_at_pc_offset(bus, pc, 1)); instruction_len = 2; },
+            0xDB => {
+                mnemonic = format!("IN A, ({:02X})", Self::read_byte_at_pc_offset(bus, pc, 1));
+                instruction_len = 2;
+            }
             0xDC => mnemonic = "CALL C, nn".to_string(),
             0xDF => mnemonic = "RST 18h".to_string(),
             0xE0 => mnemonic = "RET PO".to_string(),
@@ -409,12 +636,29 @@ impl Debugger {
             0xFB => mnemonic = "EI".to_string(),
             0xFC => mnemonic = "CALL M, nn".to_string(),
             0xFF => mnemonic = "RST 38h".to_string(),
-            _ => mnemonic = format!("UNKNOWN {:02X}", opcode)
+            _ => mnemonic = format!("UNKNOWN {:02X}", opcode),
         }
         (mnemonic, instruction_len)
     }
 
-    pub fn trace_instruction(&self, bus: &dyn Bus, pc: u16, a: u8, f: u8, b: u8, c: u8, d: u8, e: u8, h: u8, l: u8, sp: u16, ix: u16, iy: u16, i: u8, r: u8) {
+    pub fn trace_instruction(
+        &self,
+        bus: &dyn Bus,
+        pc: u16,
+        a: u8,
+        f: u8,
+        b: u8,
+        c: u8,
+        d: u8,
+        e: u8,
+        h: u8,
+        l: u8,
+        sp: u16,
+        ix: u16,
+        iy: u16,
+        i: u8,
+        r: u8,
+    ) {
         let (disassembly, instruction_len) = self.disassemble_instruction(bus, pc);
         let mut instruction_bytes = Vec::new();
         for i in 0..instruction_len {
