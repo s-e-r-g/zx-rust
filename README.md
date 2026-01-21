@@ -19,8 +19,8 @@ Loaded ZEXALL/ZEXCOM test ROM from roms/zexall-0x0100.rom
 Z80 instruction exerciser
 <adc,sbc> hl,<bc,de,hl,sp>....  OK
 add hl,<bc,de,hl,sp>..........  OK
-add ix,<bc,de,ix,sp>..........  ERROR **** crc expected:b1df8ec0 found:e4ae3aef
-add iy,<bc,de,iy,sp>..........  ERROR **** crc expected:39c8589b found:b0363496
+add ix,<bc,de,ix,sp>..........  OK
+add iy,<bc,de,iy,sp>..........  OK
 aluop a,nn....................  ERROR **** crc expected:51c19c2e found:ff09e96c
 aluop a,<b,c,d,e,h,l,(hl),a>..  ERROR **** crc expected:06c7aa8e found:dbd06e78
 aluop a,<ixh,ixl,iyh,iyl>.....  ERROR **** crc expected:a886cc44 found:eab157e2

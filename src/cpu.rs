@@ -354,15 +354,35 @@ impl Z80 {
         self.set_all_flags(s, z, y, h, x, pv, n, c);
     }
 
-    // Helper for 16-bit ADD operations (e.g., ADD HL, BC)
-    fn set_hl_flags_add(&mut self, op1: u16, op2: u16, result: u32) {
-        // flgs s, z, pv are unaffected
+    fn add16(&mut self, a: u16, b: u16) -> u16 {
+        let res32 = a as u32 + b as u32;
+        
+        // flags s, z, pv are unaffected
         self.set_flag_n(false); // N flag is always reset for ADD
-                                // c flag is set if carry from bit 15; otherwise, it is reset.
-        self.set_flag_c((result & 0x10000) != 0);
+        // c flag is set if carry from bit 15; otherwise, it is reset.
+        self.set_flag_c((res32 & 0x10000) != 0);
         // h flag is set if carry from bit 11; otherwise, it is reset.
-        self.set_flag_h(((op1 ^ op2 ^ result as u16) & 0x1000) != 0);
-        self.set_flags_xy_from_result((result >> 8) as u8);
+        self.set_flag_h(((a ^ b ^ res32 as u16) & 0x1000) != 0);
+        self.set_flags_xy_from_result((res32 >> 8) as u8);
+
+        res32 as u16
+    }
+
+    fn add_ix_iy_16(&mut self, a: u16, b: u16) -> u16 {
+        let res32 = a as u32 + b as u32;
+        
+        // S is not affected.
+        // Z is not affected.
+        // H is set if carry from bit 11; otherwise, it is reset.
+        self.set_flag_h(((a ^ b ^ res32 as u16) & 0x1000) != 0);
+        // P/V is not affected
+        // N is reset.
+        self.set_flag_n(false);
+        // C is set if carry from bit 15; otherwise, it is reset.
+        self.set_flag_c((res32 & 0x10000) != 0);
+        self.set_flags_xy_from_result((res32 >> 8) as u8);
+
+        res32 as u16
     }
 
     fn add8(&mut self, a: u8, b: u8) -> u8 {
@@ -463,11 +483,11 @@ impl Z80 {
 
     fn set_flags_bit(&mut self, val: u8, bit: u8) {
         let bit_is_set = (val & (1 << bit)) != 0;
-        let s = bit_is_set && bit == 7; // Set if n = 7 and tested bit is set.
+        let s = bit == 7 && bit_is_set;
         let z = !bit_is_set;
-        let y = (val & F_Y) != 0;
+        let y = (val & 0x20) != 0; // F_Y from bit 5 of value
         let h = true;
-        let x = (val & F_X) != 0;
+        let x = (val & 0x08) != 0; // F_X from bit 3 of value
         let pv = !bit_is_set;
         let n = false;
         let c = (self.f & F_C) != 0; // Preserve carry
@@ -649,12 +669,9 @@ impl Z80 {
             }
             0x09 => {
                 // ADD HL, BC
-                let op1 = self.get_hl();
-                let op2 = self.get_bc();
-                let result = (op1 as u32) + (op2 as u32);
-                self.set_hl(result as u16);
-                // flags
-                self.set_hl_flags_add(op1, op2, result);
+                let hl = self.add16(self.get_hl(), self.get_bc());
+                self.set_hl(hl);
+                // flags set above
                 11
             }
             0x0A => {
@@ -775,12 +792,9 @@ impl Z80 {
             }
             0x19 => {
                 // ADD HL, DE
-                let op1 = self.get_hl();
-                let op2 = self.get_de();
-                let result = (op1 as u32) + (op2 as u32);
-                self.set_hl(result as u16);
-                // flags
-                self.set_hl_flags_add(op1, op2, result);
+                let hl = self.add16(self.get_hl(), self.get_de());
+                self.set_hl(hl);
+                // flags set above
                 11
             }
             0x1A => {
@@ -922,12 +936,9 @@ impl Z80 {
             }
             0x29 => {
                 // ADD HL, HL
-                let op1 = self.get_hl();
-                let op2 = op1;
-                let result = (op1 as u32) + (op2 as u32);
-                self.set_hl(result as u16);
-                // flags
-                self.set_hl_flags_add(op1, op2, result);
+                let hl = self.add16(self.get_hl(), self.get_hl());
+                self.set_hl(hl);
+                // flags set above
                 11
             }
             0x2A => {
@@ -1052,12 +1063,9 @@ impl Z80 {
             }
             0x39 => {
                 // ADD HL, SP
-                let op1 = self.get_hl();
-                let op2 = self.sp;
-                let result = (op1 as u32) + (op2 as u32);
-                self.set_hl(result as u16);
-                // flags
-                self.set_hl_flags_add(op1, op2, result);
+                let hl = self.add16(self.get_hl(), self.sp);
+                self.set_hl(hl);
+                // flags set above
                 11
             }
             0x3A => {
@@ -3646,14 +3654,14 @@ impl Z80 {
         match opcode {
             0x09 => {
                 // ADD IX, BC
-                let result = self.ix.wrapping_add(self.get_bc());
-                self.ix = result;
+                self.ix = self.add_ix_iy_16(self.ix, self.get_bc());
+                // flags set above
                 15
             }
             0x19 => {
                 // ADD IX, DE
-                let result = self.ix.wrapping_add(self.get_de());
-                self.ix = result;
+                self.ix = self.add_ix_iy_16(self.ix, self.get_de());
+                // flags set above
                 15
             }
             0x21 => {
@@ -3696,8 +3704,8 @@ impl Z80 {
             }
             0x29 => {
                 // ADD IX, IX
-                let result = self.ix.wrapping_add(self.ix);
-                self.ix = result;
+                self.ix = self.add_ix_iy_16(self.ix, self.ix);
+                // flags set above
                 15
             }
             0x2A => {
@@ -3762,8 +3770,8 @@ impl Z80 {
             }
             0x39 => {
                 // ADD IX, SP
-                let result = self.ix.wrapping_add(self.sp);
-                self.ix = result;
+                self.ix = self.add_ix_iy_16(self.ix, self.sp);
+                // flags set above
                 15
             }
             0x40 => {
@@ -4562,7 +4570,6 @@ impl Z80 {
             }
             _ => {
                 panic!("Unimplemented DDCB opcode: {:02X}", opcode);
-                8
             }
         }
     }
@@ -4572,14 +4579,14 @@ impl Z80 {
         match opcode {
             0x09 => {
                 // ADD IY, BC
-                let result = self.iy.wrapping_add(self.get_bc());
-                self.iy = result;
+                self.iy = self.add_ix_iy_16(self.iy, self.get_bc());
+                // flags set above
                 15
             }
             0x19 => {
                 // ADD IY, DE
-                let result = self.iy.wrapping_add(self.get_de());
-                self.iy = result;
+                self.iy = self.add_ix_iy_16(self.iy, self.get_de());
+                // flags set above
                 15
             }
             0x21 => {
@@ -4622,8 +4629,8 @@ impl Z80 {
             }
             0x29 => {
                 // ADD IY, IY
-                let result = self.iy.wrapping_add(self.iy);
-                self.iy = result;
+                self.iy = self.add_ix_iy_16(self.iy, self.iy);
+                // flags set above
                 15
             }
             0x2A => {
@@ -4688,8 +4695,8 @@ impl Z80 {
             }
             0x39 => {
                 // ADD IY, SP
-                let result = self.iy.wrapping_add(self.sp);
-                self.iy = result;
+                self.iy = self.add_ix_iy_16(self.iy, self.sp);
+                // flags set above
                 15
             }
             0x40 => {
@@ -7379,5 +7386,64 @@ mod tests {
         assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag incorrect"); // 0x8000 - 0x0001 = 0x7fff, overflow
         assert_eq!(machine.cpu.f & F_N, F_N, "N flag incorrect");
         assert_eq!(machine.cpu.f & F_C, 0, "C flag incorrect");
+    }
+
+    #[test]
+    fn test_adc16_basic() {
+        let mut cpu = Z80::new();
+        cpu.f = 0; // No carry
+        let res = cpu.adc16(0x1234, 0x1111);
+        assert_eq!(res, 0x2345);
+        assert_eq!(cpu.f & F_C, 0);
+        assert_eq!(cpu.f & F_H, 0);
+        assert_eq!(cpu.f & F_N, 0);
+    }
+
+    #[test]
+    fn test_adc16_with_carry() {
+        let mut cpu = Z80::new();
+        cpu.f = F_C; // Carry set
+        let res = cpu.adc16(0xFFFF, 0x0001);
+        assert_eq!(res, 0x0001);
+        assert_eq!(cpu.f & F_C, F_C);
+        assert_eq!(cpu.f & F_Z, 0);
+    }
+
+    #[test]
+    fn test_adc16_zero() {
+        let mut cpu = Z80::new();
+        cpu.f = 0;
+        let res = cpu.adc16(0, 0);
+        assert_eq!(res, 0);
+        assert_eq!(cpu.f & F_Z, F_Z);
+    }
+
+    #[test]
+    fn test_sbc16_basic() {
+        let mut cpu = Z80::new();
+        cpu.f = 0; // No carry
+        let res = cpu.sbc16(0x2345, 0x1234);
+        assert_eq!(res, 0x1111);
+        assert_eq!(cpu.f & F_C, 0);
+        assert_eq!(cpu.f & F_N, F_N);
+    }
+
+    #[test]
+    fn test_sbc16_with_borrow() {
+        let mut cpu = Z80::new();
+        cpu.f = F_C; // Carry set
+        let res = cpu.sbc16(0x0000, 0x0001);
+        assert_eq!(res, 0xFFFE);
+        assert_eq!(cpu.f & F_C, F_C);
+        assert_eq!(cpu.f & F_S, F_S);
+    }
+
+    #[test]
+    fn test_sbc16_zero() {
+        let mut cpu = Z80::new();
+        cpu.f = 0;
+        let res = cpu.sbc16(0, 0);
+        assert_eq!(res, 0);
+        assert_eq!(cpu.f & F_Z, F_Z);
     }
 }
