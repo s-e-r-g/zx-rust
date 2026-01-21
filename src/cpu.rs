@@ -396,42 +396,43 @@ impl Z80 {
     fn adc16(&mut self, a: u16, b: u16) -> u16 {
         let carry = (self.f & F_C) != 0;
         let result = a as u32 + b as u32 + carry as u32;
+        let res16 = result as u16;
         // S is set if result is negative; otherwise, it is reset.
-        self.set_flag_s((result & 0x8000) != 0);
+        self.set_flag_s((res16 & 0x8000) != 0);
         // Z is set if result is 0; otherwise, it is reset
-        self.set_flag_z((result & 0xFFFF) == 0);
-        // H is set if carry from bit 11; otherwise, it is reset.
-        self.set_flag_h(((a ^ b ^ result as u16) & 0x1000) != 0);
-        // P/V is set if overflow; otherwise, it is reset.
-        self.set_flag_pv(((a ^ result as u16) & (b ^ result as u16)) & 0x8000 != 0);
+        self.set_flag_z(res16 == 0);
+        // H is set if carry from bit 11 (bit 12 overall)
+        self.set_flag_h((a & 0x0FFF) + (b & 0x0FFF) + (carry as u16) > 0x0FFF);
+        // P/V is set if signed overflow
+        self.set_flag_pv(((a ^ !b) & (a ^ res16) & 0x8000) != 0);
         // N is reset
         self.set_flag_n(false);
         // C is set if carry from bit 15; otherwise, it is reset.
-        self.set_flag_c((result & 0x10000) != 0);
+        self.set_flag_c(result > 0xFFFF);
         // XY from high byte of result
-        self.set_flags_xy_from_result(((result >> 8) & 0xFF) as u8);
-        result as u16
+        self.set_flags_xy_from_result(((res16 >> 8) & 0xFF) as u8);
+        res16
     }
 
     fn sbc16(&mut self, a: u16, b: u16) -> u16 {
         let carry = (self.f & F_C) != 0;
         let result = a as i32 - b as i32 - carry as i32;
+        let res16 = (result as u16) & 0xFFFF;
         // S is set if result is negative; otherwise, it is reset.
-        self.set_flag_s((result & 0x8000) != 0);
+        self.set_flag_s((res16 & 0x8000) != 0);
         // Z is set if result is 0; otherwise, it is reset
-        self.set_flag_z((result & 0xFFFF) == 0);
-        // H is set if borrow from bit 12; otherwise, it is reset.
-        self.set_flag_h(((a ^ b ^ result as u16) & 0x1000) != 0);
-        // P/V is set if overflow; otherwise, it is reset.
-        self.set_flag_pv(((a ^ result as u16) & (b ^ result as u16)) & 0x8000 != 0);
+        self.set_flag_z(res16 == 0);
+        // H is set if borrow from bit 12
+        self.set_flag_h((a ^ b ^ (res16)) & 0x1000 != 0);
+        // P/V is set if signed overflow
+        self.set_flag_pv(((a ^ b) & (a ^ res16) & 0x8000) != 0);
         // N is set.
         self.set_flag_n(true);
-        // C is set if borrow; otherwise, it is reset.
+        // C is set if borrow
         self.set_flag_c(result < 0);
         // XY from high byte of result
-        self.set_flags_xy_from_result(((result as u32 >> 8) & 0xFF) as u8);
-
-        result as u16
+        self.set_flags_xy_from_result(((res16 >> 8) & 0xFF) as u8);
+        res16
     }
 
     fn set_flags_and(&mut self, result: u8) {

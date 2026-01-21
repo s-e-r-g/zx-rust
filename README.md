@@ -17,7 +17,7 @@ $ cargo run --release -- --run-zexall --no-ui
 ```
 Loaded ZEXALL/ZEXCOM test ROM from roms/zexall-0x0100.rom
 Z80 instruction exerciser
-<adc,sbc> hl,<bc,de,hl,sp>....  ERROR **** crc expected:d48ad519 found:f39089a0
+<adc,sbc> hl,<bc,de,hl,sp>....  OK
 add hl,<bc,de,hl,sp>..........  OK
 add ix,<bc,de,ix,sp>..........  ERROR **** crc expected:b1df8ec0 found:e4ae3aef
 add iy,<bc,de,iy,sp>..........  ERROR **** crc expected:39c8589b found:b0363496
