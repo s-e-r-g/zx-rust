@@ -76,7 +76,7 @@ ldi<r> (2)....................  ERROR **** crc expected:e9ead0ae found:e798d5ff
 neg...........................  ERROR **** crc expected:d638dd6a found:f7dc0ecd
 <rrd,rld>.....................  OK
 <rlca,rrca,rla,rra>...........  OK
-shf/rot (<ix,iy>+1)...........  ERROR **** crc expected:710034cb found:0e312ba1
+shf/rot (<ix,iy>+1)...........  OK
 shf/rot <b,c,d,e,h,l,(hl),a>..  OK
 <set,res> n,<bcdehl(hl)a>.....  OK
 <set,res> n,(<ix,iy>+1).......  OK
