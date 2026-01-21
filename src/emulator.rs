@@ -74,6 +74,8 @@ struct Ula {
     h_counter: usize,
     v_counter: usize,
     border_color: u8,
+    blink_phase: bool, // true = blink on, false = blink off
+    blink_counter: u8, // counts frames
 }
 
 impl Ula {
@@ -83,6 +85,8 @@ impl Ula {
             h_counter: 0,
             v_counter: 0,
             border_color: 0,
+            blink_phase: false,
+            blink_counter: 0,
         }
     }
 
@@ -100,6 +104,12 @@ impl Ula {
             self.v_counter += 1;
             if self.v_counter == FULL_HEIGHT {
                 self.v_counter = 0;
+                // Called once per frame
+                self.blink_counter = self.blink_counter.wrapping_add(1);
+                if self.blink_counter >= 32 {
+                    self.blink_counter = 0;
+                    self.blink_phase = !self.blink_phase;
+                }
             }
         }
     }
@@ -125,9 +135,15 @@ impl Ula {
         // Calculate attribute address
         let attr_addr = 0x5800 + ((y >> 3) * 32) + (x >> 3);
         let attr = memory.read_byte(attr_addr as u16);
+        let flash = (attr & 0x80) != 0;
         let ink = attr & 7;
         let paper = (attr >> 3) & 7;
         let bright = (attr >> 6) & 1;
+        let (ink, paper) = if flash && self.blink_phase {
+            (paper, ink)
+        } else {
+            (ink, paper)
+        };
         let color = if bit == 1 {
             ink | (bright << 3)
         } else {
