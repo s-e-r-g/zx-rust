@@ -78,7 +78,7 @@ neg...........................  ERROR **** crc expected:d638dd6a found:f7dc0ecd
 <rlca,rrca,rla,rra>...........  OK
 shf/rot (<ix,iy>+1)...........  ERROR **** crc expected:710034cb found:0e312ba1
 shf/rot <b,c,d,e,h,l,(hl),a>..  OK
-<set,res> n,<bcdehl(hl)a>.....  ERROR **** crc expected:8b57f008 found:a965275e
+<set,res> n,<bcdehl(hl)a>.....  OK
 <set,res> n,(<ix,iy>+1).......  OK
 ld (<ix,iy>+1),<b,c,d,e>......  OK
 ld (<ix,iy>+1),<h,l>..........  OK

@@ -2890,18 +2890,14 @@ impl Z80 {
                     let val = bus.read_byte(addr);
                     let new_val = val & !(1 << b);
                     bus.write_byte(addr, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f =
-                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    // flags unchanged
                     15
                 } else {
                     // RES b, r
                     let val = self.get_reg(r);
                     let new_val = val & !(1 << b);
                     self.set_reg(r, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f =
-                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    // flags unchanged
                     8
                 }
             }
@@ -2915,18 +2911,14 @@ impl Z80 {
                     let val = bus.read_byte(addr);
                     let new_val = val | (1 << b);
                     bus.write_byte(addr, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f =
-                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    // fllags unchanged
                     15
                 } else {
                     // SET b, r
                     let val = self.get_reg(r);
                     let new_val = val | (1 << b);
                     self.set_reg(r, new_val);
-                    // Flags are not affected except F_X and F_Y (copied from new_val)
-                    self.f =
-                        (self.f & (F_S | F_Z | F_H | F_PV | F_N | F_C)) | (new_val & (F_Y | F_X));
+                    // flags unchanged
                     8
                 }
             }
@@ -5520,6 +5512,7 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let new_val = val & !(1 << bit);
                 bus.write_byte(addr, new_val);
+                // flags unchanged
                 23
             }
             0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => {
@@ -5528,6 +5521,7 @@ impl Z80 {
                 let val = bus.read_byte(addr);
                 let new_val = val | (1 << bit);
                 bus.write_byte(addr, new_val);
+                // flags unchanged
                 23
             }
             _ => {
