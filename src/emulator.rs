@@ -357,7 +357,7 @@ impl MachineZxSpectrum48 {
         let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
             self.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
-            println!("Loaded ZEXALL/ZEXCOM test ROM from {}", rom_name);
+            println!("Loaded ZEXALL/ZEXDOC test ROM from {}", rom_name);
 
             // Patch address 5 to add RET instruction to avoid hanging
             self.rom[5] = 0xC9; // RET

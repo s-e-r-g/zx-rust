@@ -1,2 +1,3 @@
 [alias]
 zexall = "run --release -- --run-zexall --no-ui"
+zexdoc = "run --release -- --run-zexdoc --no-ui"

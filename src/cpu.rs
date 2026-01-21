@@ -481,13 +481,13 @@ impl Z80 {
         );
     }
 
-    fn set_flags_bit(&mut self, val: u8, bit: u8) {
+    fn set_flags_bit(&mut self, val: u8, bit: u8, from_memory: bool) {
         let bit_is_set = (val & (1 << bit)) != 0;
         let s = bit == 7 && bit_is_set;
         let z = !bit_is_set;
-        let y = (val & 0x20) != 0; // F_Y from bit 5 of value
+        let y = if from_memory { (val & 0x20) != 0 } else { false }; // F_Y from bit 5 of value only for memory
         let h = true;
-        let x = (val & 0x08) != 0; // F_X from bit 3 of value
+        let x = if from_memory { (val & 0x08) != 0 } else { false }; // F_X from bit 3 of value only for memory
         let pv = !bit_is_set;
         let n = false;
         let c = (self.f & F_C) != 0; // Preserve carry
@@ -918,9 +918,15 @@ impl Z80 {
                 }
 
                 let c_flag = (self.f & F_C) != 0;
-                self.set_flags_or_xor(self.a); // Sets S,Z,Y,X,PV, clears H,N,C
-                self.set_flag_n(n_flag); // Restore N
-                self.set_flag_c(c_flag); // Set final C
+                // Update flags: S, Z, Y, X, PV based on result; H and N as specified
+                self.set_flag_s((self.a & 0x80) != 0);
+                self.set_flag_z(self.a == 0);
+                self.set_flag_y((self.a & F_Y) != 0);
+                self.set_flag_x((self.a & F_X) != 0);
+                self.set_flag_pv(Self::parity(self.a));
+                self.set_flag_n(n_flag); // Preserve N
+                self.set_flag_c(c_flag); // Preserve C
+                self.set_flag_h(false); // H is always cleared
                 4
             }
             0x28 => {
@@ -2873,7 +2879,8 @@ impl Z80 {
                 } else {
                     self.get_reg(r)
                 };
-                self.set_flags_bit(val, bit);
+                let from_memory = r == 6;
+                self.set_flags_bit(val, bit, from_memory);
                 if r == 6 {
                     12
                 } else {
@@ -2965,16 +2972,18 @@ impl Z80 {
                 20
             }
             0x44 => {
-                // NEG
+                // NEG: A = 0 - A
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 })
-                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
-                    | (if Self::parity(self.a) { F_PV } else { 0 })
-                    | F_N
-                    | (if result > 0xFF { F_C } else { 0 })
-                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
+                // Set flags: S, Z, H, PV, N, C
+                self.set_flag_z(self.a == 0);
+                self.set_flag_s((self.a & 0x80) != 0);
+                self.set_flag_h((val & 0x0F) != 0); // H if borrow from bit 4 (non-zero lower nibble)
+                self.set_flag_pv(val == 0x80); // P/V if overflow (val was 0x80)
+                self.set_flag_n(true); // N always set
+                self.set_flag_c(val != 0); // C if A was non-zero
+                self.set_flags_xy_from_result(self.a);
                 8
             }
             0x45 => {
@@ -4250,24 +4259,14 @@ impl Z80 {
                 // AND IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a &= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 8
             }
             0xA5 => {
                 // AND IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a &= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 8
             }
             0xA6 => {
@@ -4276,34 +4275,21 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a &= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 19
             }
             0xAC => {
                 // XOR IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a ^= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xAD => {
                 // XOR IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a ^= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xAE => {
@@ -4312,33 +4298,21 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a ^= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 19
             }
             0xB4 => {
                 // OR IXH (undocumented)
                 let ixh = (self.ix >> 8) as u8;
                 self.a |= ixh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xB5 => {
                 // OR IXL (undocumented)
                 let ixl = self.ix as u8;
                 self.a |= ixl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xB6 => {
@@ -4347,11 +4321,7 @@ impl Z80 {
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a |= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 19
             }
             0xBC => {
@@ -4592,7 +4562,7 @@ impl Z80 {
                 // BIT b, (IX+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
-                self.set_flags_bit(val, bit);
+                self.set_flags_bit(val, bit, true);
                 20
             }
             0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
@@ -5259,24 +5229,14 @@ impl Z80 {
                 // AND IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a &= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 8
             }
             0xA5 => {
                 // AND IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a &= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 8
             }
             0xA6 => {
@@ -5285,34 +5245,21 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a &= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | F_H
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_and(self.a);
                 19
             }
             0xAC => {
                 // XOR IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a ^= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xAD => {
                 // XOR IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a ^= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xAE => {
@@ -5321,33 +5268,21 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a ^= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 19
             }
             0xB4 => {
                 // OR IYH (undocumented)
                 let iyh = (self.iy >> 8) as u8;
                 self.a |= iyh;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xB5 => {
                 // OR IYL (undocumented)
                 let iyl = self.iy as u8;
                 self.a |= iyl;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 8
             }
             0xB6 => {
@@ -5356,11 +5291,7 @@ impl Z80 {
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
                 self.a |= val;
-                self.f = if self.a == 0 { F_Z } else { 0 }
-                    | if (self.a & 0x80) != 0 { F_S } else { 0 }
-                    | if (self.a & 0x20) != 0 { F_Y } else { 0 }
-                    | if (self.a & 0x08) != 0 { F_X } else { 0 }
-                    | if Z80::parity(self.a) { F_PV } else { 0 };
+                self.set_flags_or_xor(self.a);
                 19
             }
             0xBC => {
@@ -5601,7 +5532,7 @@ impl Z80 {
                 // BIT b, (IY+d)
                 let bit = (opcode >> 3) & 0x07;
                 let val = bus.read_byte(addr);
-                self.set_flags_bit(val, bit);
+                self.set_flags_bit(val, bit, true);
                 20
             }
             0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
