@@ -107,8 +107,13 @@ struct MyApp {
 impl MyApp {
     fn handle_input(&mut self, ctx: &egui::Context) {
         ctx.input(|i| {
-            self.emulator.set_key_state(Key::Shift, i.modifiers.shift);
-            self.emulator.set_key_state(Key::Sym, i.modifiers.ctrl);
+            // CAPS SHIFT: either Shift or Ctrl
+            let caps_shift = i.modifiers.shift || i.modifiers.ctrl;
+            // SYMBOL SHIFT: Alt (or keep as Ctrl if you prefer)
+            let sym_shift = i.modifiers.alt;
+
+            self.emulator.set_key_state(Key::Shift, caps_shift);
+            self.emulator.set_key_state(Key::Sym, sym_shift);
 
             let keys = [
                 (egui::Key::Z, Key::Z),
