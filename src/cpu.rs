@@ -897,7 +897,7 @@ impl Z80 {
             }
             // TODO: add test for DAA
             0x27 => {
-                // DAA
+                // DAA (Decimal Adjust Accumulator)
                 let mut correction = 0;
                 let n_flag = (self.f & F_N) != 0; // preserve N
 
@@ -7537,5 +7537,79 @@ mod tests {
         let res = cpu.sbc16(0, 0);
         assert_eq!(res, 0);
         assert_eq!(cpu.f & F_Z, F_Z);
+    }
+
+    #[test]
+    fn test_27_daa() {
+        // Test DAA after addition
+        let mut machine = TestMachine::new(Some(vec![0x3E, 0x09, 0x06, 0x09, 0x80, 0x27])); // LD A,9; LD B,9; ADD A,B; DAA
+        machine.step(); // LD A,9
+        assert_eq!(machine.cpu.a, 9);
+        machine.step(); // LD B,9
+        machine.step(); // ADD A,B
+        assert_eq!(machine.cpu.a, 18);
+        machine.step(); // DAA
+        assert_eq!(machine.cpu.a, 0x18, "A after DAA (add) was {:02X}", machine.cpu.a);
+        println!("Flags after DAA (add): {:08b}", machine.cpu.f);
+        assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_H, 0, "H flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_N, 0, "N flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_C, 0, "C flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_X, 0x08, "X flag after DAA (add)");
+        assert_eq!(machine.cpu.f & F_Y, 0x00, "Y flag after DAA (add)");
+        // Test DAA after subtraction
+        let mut machine = TestMachine::new(Some(vec![0x3E, 0x15, 0xD6, 0x06, 0x27])); // LD A,0x15; SUB 0x06; DAA
+        machine.step(); // LD A,0x15
+        machine.step(); // SUB 0x06
+        assert_eq!(machine.cpu.a, 0x0F, "A after SUB was {:02X}", machine.cpu.a);
+        machine.step(); // DAA
+        assert_eq!(machine.cpu.a, 0x09, "A after DAA (sub) was {:02X}", machine.cpu.a);
+        assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_H, 0, "H flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_N, F_N, "N flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_C, 0, "C flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_X, 0x08, "X flag after DAA (sub)");
+        assert_eq!(machine.cpu.f & F_Y, 0x00, "Y flag after DAA (sub)");
+    }
+
+    #[test]
+    fn test_2f_cpl() {
+        let mut machine = TestMachine::new(Some(vec![0x3E, 0x55, 0x2F])); // LD A,0x55; CPL
+        machine.step();
+        machine.step();
+        assert_eq!(machine.cpu.a, 0xAA);
+        assert_eq!(machine.cpu.f & F_H, F_H);
+        assert_eq!(machine.cpu.f & F_N, F_N);
+        assert_eq!(machine.cpu.f & F_X, 0x08);
+        assert_eq!(machine.cpu.f & F_Y, 0x20);
+    }
+
+    #[test]
+    fn test_37_scf_flags() {
+        let mut machine = TestMachine::new(Some(vec![0x3E, 0xFF, 0x37])); // LD A,0xFF; SCF
+        machine.step();
+        machine.step();
+        assert_eq!(machine.cpu.f & F_C, F_C);
+        assert_eq!(machine.cpu.f & F_H, 0);
+        assert_eq!(machine.cpu.f & F_N, 0);
+        assert_eq!(machine.cpu.f & F_X, 0x08);
+        assert_eq!(machine.cpu.f & F_Y, 0x20);
+    }
+
+    #[test]
+    fn test_3f_ccf_flags() {
+        let mut machine = TestMachine::new(Some(vec![0x3E, 0x01, 0x37, 0x3F])); // LD A,1; SCF; CCF
+        machine.step();
+        machine.step();
+        machine.step();
+        assert_eq!(machine.cpu.f & F_C, 0);
+        assert_eq!(machine.cpu.f & F_H, F_H);
+        assert_eq!(machine.cpu.f & F_N, 0);
+        assert_eq!(machine.cpu.f & F_X, 0);
+        assert_eq!(machine.cpu.f & F_Y, 0);
     }
 }
