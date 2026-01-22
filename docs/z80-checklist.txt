@@ -1,0 +1,7 @@
+Manual checklist for upcodes implementation (I) and unit-test (T)
+
+IT | Opcode    | Op Name        
+-------------------------------
+IT   00          NOP
+IT   01          LD BC,nn
+IT   02          LD (BC),A

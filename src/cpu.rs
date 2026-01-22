@@ -5623,18 +5623,45 @@ mod tests {
     #[test]
     fn test_00_nop() {
         let mut machine = TestMachine::new(Some(vec![0x00])); // NOP
+        // check defaults here (found in undocumented documentation)
+        assert_eq!(machine.cpu.a, 0xff);
+        assert_eq!(machine.cpu.f, 0xff);
+        assert_eq!(machine.cpu.b, 0);
+        assert_eq!(machine.cpu.c, 0);
+        assert_eq!(machine.cpu.d, 0);
+        assert_eq!(machine.cpu.e, 0);
+        assert_eq!(machine.cpu.h, 0);
+        assert_eq!(machine.cpu.l, 0);
+        assert_eq!(machine.cpu.ix, 0);
+        assert_eq!(machine.cpu.iy, 0);
+        assert_eq!(machine.cpu.sp, 0xffff);
         let cycles = machine.step();
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
+        // check that no registers or flags changed
+        assert_eq!(machine.cpu.a, 0xff);
+        assert_eq!(machine.cpu.f, 0xff);
+        assert_eq!(machine.cpu.b, 0);
+        assert_eq!(machine.cpu.c, 0);
+        assert_eq!(machine.cpu.d, 0);
+        assert_eq!(machine.cpu.e, 0);
+        assert_eq!(machine.cpu.h, 0);
+        assert_eq!(machine.cpu.l, 0);
+        assert_eq!(machine.cpu.ix, 0);
+        assert_eq!(machine.cpu.iy, 0);
+        assert_eq!(machine.cpu.sp, 0xffff);
     }
 
     #[test]
     fn test_01_ld_bc_nn() {
         let mut machine = TestMachine::new(Some(vec![0x01, 0x34, 0x12])); // LD BC, nn
+        machine.cpu.f = 0xFF;
         let cycles = machine.step();
         assert_eq!(machine.cpu.get_bc(), 0x1234);
         assert_eq!(cycles, 10);
         assert_eq!(machine.cpu.pc, 3);
+        // check that flags unchanged
+        assert_eq!(machine.cpu.f, 0xFF);
     }
 
     #[test]
@@ -5642,10 +5669,13 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x02])); // LD (BC), A
         machine.cpu.a = 0xCD;
         machine.cpu.set_bc(0x1234);
+        machine.cpu.f = 0xFF;
         let cycles = machine.step();
         assert_eq!(machine.ram[0x1234], 0xCD);
         assert_eq!(cycles, 7);
         assert_eq!(machine.cpu.pc, 1);
+        // check that flags unchanged
+        assert_eq!(machine.cpu.f, 0xFF);
     }
 
     #[test]
