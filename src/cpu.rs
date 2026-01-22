@@ -485,9 +485,17 @@ impl Z80 {
         let bit_is_set = (val & (1 << bit)) != 0;
         let s = bit == 7 && bit_is_set;
         let z = !bit_is_set;
-        let y = if from_memory { (val & 0x20) != 0 } else { false }; // F_Y from bit 5 of value only for memory
+        let y = if from_memory {
+            (val & 0x20) != 0
+        } else {
+            false
+        }; // F_Y from bit 5 of value only for memory
         let h = true;
-        let x = if from_memory { (val & 0x08) != 0 } else { false }; // F_X from bit 3 of value only for memory
+        let x = if from_memory {
+            (val & 0x08) != 0
+        } else {
+            false
+        }; // F_X from bit 3 of value only for memory
         let pv = !bit_is_set;
         let n = false;
         let c = (self.f & F_C) != 0; // Preserve carry
@@ -5623,6 +5631,7 @@ mod tests {
     #[test]
     fn test_00_nop() {
         let mut machine = TestMachine::new(Some(vec![0x00])); // NOP
+
         // check defaults here (found in undocumented documentation)
         assert_eq!(machine.cpu.a, 0xff);
         assert_eq!(machine.cpu.f, 0xff);
@@ -5679,9 +5688,23 @@ mod tests {
     }
 
     #[test]
+    fn test_03_inc_bc() {
+        let mut machine = TestMachine::new(Some(vec![0x03])); // INC BC
+        machine.cpu.f = 0xFF;
+        machine.cpu.set_bc(0x1234);
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.get_bc(), 0x1235);
+        assert_eq!(cycles, 6);
+        assert_eq!(machine.cpu.pc, 1);
+        // check that flags unchanged
+        assert_eq!(machine.cpu.f, 0xFF);
+    }
+
+    #[test]
     fn test_04_inc_b() {
         let mut machine = TestMachine::new(Some(vec![0x04])); // INC B
         machine.cpu.b = 5;
+        machine.cpu.f = 0xFF;
         let cycles = machine.step();
         assert_eq!(machine.cpu.b, 6);
         assert_eq!(machine.cpu.f & F_Z, 0); // not zero
