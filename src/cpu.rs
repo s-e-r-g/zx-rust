@@ -5714,6 +5714,25 @@ mod tests {
         assert_eq!(machine.cpu.f & F_N, 0); // N reset
         assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
         assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        assert_eq!(machine.cpu.f & F_C, F_C); // carry unchanged
+        assert_eq!(cycles, 4);
+        assert_eq!(machine.cpu.pc, 1);
+    }
+    #[test]
+    fn test_05_dec_b() {
+        let mut machine = TestMachine::new(Some(vec![0x05])); // DEC B
+        machine.cpu.b = 0x10;
+        machine.cpu.f = 0xFF;
+        let cycles = machine.step();
+        assert_eq!(machine.cpu.b, 0xF);
+        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
+        assert_eq!(machine.cpu.f & F_S, 0); // not negative
+        assert_eq!(machine.cpu.f & F_H, F_H); // half carry
+        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
+        assert_eq!(machine.cpu.f & F_N, F_N); // N set
+        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
+        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        assert_eq!(machine.cpu.f & F_C, F_C); // carry unchanged
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }

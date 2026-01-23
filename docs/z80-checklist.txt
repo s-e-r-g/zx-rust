@@ -7,4 +7,4 @@ IT  01          LD BC,nn
 IT  02          LD (BC),A
 IT  03          INC BC
 IT  04          INC B
-    
+IT  05          DEC B
