@@ -3442,14 +3442,14 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
 
-                // Update flags
+                // flags
+                let temp = self.a.wrapping_add(val);
+                self.set_flag_y(temp & 0x02 != 0);
+                self.set_flag_x(temp & 0x08 != 0);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_pv(bc != 0);
-
-                // Undocumented flags
-                let temp = self.a.wrapping_add(val);
-                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+                // s, z, c are not affected
 
                 16
             }
@@ -3527,15 +3527,16 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
 
-                // Update flags
+                // flags
+                let temp = self.a.wrapping_add(val);
+                self.set_flag_y(temp & 0x02 != 0);
+                self.set_flag_x(temp & 0x08 != 0);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_pv(bc != 0);
+                // s, z, c are not affected
 
                 // Undocumented flags
-                let temp = self.a.wrapping_add(val);
-                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
-
                 16
             }
             0xA9 => {
@@ -3574,14 +3575,14 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
 
-                // Update flags
+                // flags
+                let temp = self.a.wrapping_add(val);
+                self.set_flag_y(temp & 0x02 != 0);
+                self.set_flag_x(temp & 0x08 != 0);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_pv(bc != 0);
-
-                // Undocumented flags
-                let temp = self.a.wrapping_add(val);
-                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+                // s, z, c are not affected
 
                 if bc != 0 {
                     self.pc = self.pc.wrapping_sub(2);
@@ -3639,14 +3640,16 @@ impl Z80 {
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
 
-                // Update flags
+                // flags
+                let temp = self.a.wrapping_add(val);
+                self.set_flag_y(temp & 0x02 != 0);
+                self.set_flag_x(temp & 0x08 != 0);
                 self.set_flag_h(false);
                 self.set_flag_n(false);
                 self.set_flag_pv(bc != 0);
+                // s, z, c are not affected
 
-                // Undocumented flags
-                let temp = self.a.wrapping_add(val);
-                self.f = (self.f & !(F_Y | F_X)) | (temp & (F_Y | F_X));
+
 
                 if bc != 0 {
                     self.pc = self.pc.wrapping_sub(2);
