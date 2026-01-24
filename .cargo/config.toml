@@ -1,3 +1,4 @@
 [alias]
 zexall = "run --release -- --run-zexall --no-ui"
 zexdoc = "run --release -- --run-zexdoc --no-ui"
+robik = "run --release -- --rom=roms/Robik48.rom"
