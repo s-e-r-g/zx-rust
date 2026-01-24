@@ -6800,9 +6800,9 @@ mod tests {
 
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
-        // X flag (bit 3) is 1, Y flag (bit 5) is 1
+        // X flag (bit 3) is 1, Y flag (bit 1) is 0
         assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
-        assert_eq!(machine.cpu.f & F_Y, F_Y, "Y should be set");
+        assert_eq!(machine.cpu.f & F_Y, 0, "Y should be reset");
     }
 
     #[test]
@@ -6852,9 +6852,9 @@ mod tests {
 
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
-        // X flag (bit 3) is 1, Y flag (bit 5) is 1
+        // X flag (bit 3) is 1, Y flag (bit 1) is 0
         assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
-        assert_eq!(machine.cpu.f & F_Y, F_Y, "Y should be set");
+        assert_eq!(machine.cpu.f & F_Y, 0, "Y should be reset");
     }
 
     #[test]
