@@ -903,38 +903,76 @@ impl Z80 {
                 // flags unchanged
                 7
             }
-            // TODO: add test for DAA
             0x27 => {
                 // DAA (Decimal Adjust Accumulator)
-                let mut correction = 0;
-                let n_flag = (self.f & F_N) != 0; // preserve N
+                /*
+                   - If the A register is greater than 0x99, OR the Carry flag is SET, then
 
-                if (self.f & F_H) != 0 || (self.a & 0x0F) > 9 {
-                    correction |= 0x06;
-                }
-                if (self.f & F_C) != 0 || self.a > 0x99 {
+                       The upper four bits of the Correction Factor are set to 6,
+                       and the Carry flag will be SET.
+                   Else
+                       The upper four bits of the Correction Factor are set to 0,
+                       and the Carry flag will be CLEARED.
+
+
+                   - If the lower four bits of the A register (A AND 0x0F) is greater than 9,
+                   OR the Half-Carry (H) flag is SET, then
+
+                       The lower four bits of the Correction Factor are set to 6.
+                   Else
+                       The lower four bits of the Correction Factor are set to 0.
+
+
+                   - This results in a Correction Factor of 0x00, 0x06, 0x60 or 0x66.
+
+
+                   - If the N flag is CLEAR, then
+
+                       ADD the Correction Factor to the A register.
+                   Else
+                       SUBTRACT the Correction Factor from the A register.
+
+
+                   - The Flags are set as follows:
+
+                   Carry:      Set/clear as in the first step above.
+
+                   Half-Carry: Set if the correction operation caused a binary carry/borrow
+                               from bit 3 to bit 4.
+                               For this purpose, may be calculated as:
+                               Bit 4 of: A(before) XOR A(after).
+
+                   S,Z,P,5,3:  Set as for simple logic operations on the resultant A value.
+
+                   N:          Leave.
+                */
+                let mut correction: u8 = 0;
+                // Determine upper nibble correction and carry
+                if self.a > 0x99 || (self.f & F_C) != 0 {
                     correction |= 0x60;
                     self.set_flag_c(true);
                 } else {
                     self.set_flag_c(false);
                 }
-
-                if n_flag {
-                    self.a = self.a.wrapping_sub(correction);
-                } else {
-                    self.a = self.a.wrapping_add(correction);
+                // Determine lower nibble correction
+                if (self.a & 0x0F) > 0x09 || (self.f & F_H) != 0 {
+                    correction |= 0x06;
                 }
-
-                let c_flag = (self.f & F_C) != 0;
-                // Update flags: S, Z, Y, X, PV based on result; H and N as specified
+                // Add or subtract correction
+                let old_a = self.a;
+                if (self.f & F_N) == 0 {
+                    self.a = self.a.wrapping_add(correction);
+                } else {
+                    self.a = self.a.wrapping_sub(correction);
+                }
+                // Set H flag
+                self.set_flag_h(((old_a ^ self.a) & 0x10) != 0);
+                // Set S,Z,P,5,3 from result
                 self.set_flag_s((self.a & 0x80) != 0);
                 self.set_flag_z(self.a == 0);
-                self.set_flag_y((self.a & F_Y) != 0);
-                self.set_flag_x((self.a & F_X) != 0);
-                self.set_flag_pv(Self::parity(self.a));
-                self.set_flag_n(n_flag); // Preserve N
-                self.set_flag_c(c_flag); // Preserve C
-                self.set_flag_h(false); // H is always cleared
+                self.set_flag_pv(Z80::parity(self.a));
+                self.set_flags_xy_from_result(self.a);
+                // N flag unchanged
                 4
             }
             0x28 => {
