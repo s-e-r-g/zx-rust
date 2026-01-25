@@ -6,18 +6,31 @@ use core::panic;
 
 use std::io::{self, Write};
 
+use bitflags::bitflags;
+
 use crate::debugger::Debugger;
 use crate::emulator::{Bus, Memory};
 
-// Z80 CPU Flag register bits
-const F_S: u8 = 0x80; // Sign flag
-const F_Z: u8 = 0x40; // Zero flag
-const F_Y: u8 = 0x20; // Undocumented flag (bit 5 of result)
-const F_H: u8 = 0x10; // Half-carry flag
-const F_X: u8 = 0x08; // Undocumented flag (bit 3 of result)
-const F_PV: u8 = 0x04; // Parity/Overflow flag
-const F_N: u8 = 0x02; // Subtract flag
-const F_C: u8 = 0x01; // Carry flag
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Flags: u8 {
+        const S   = 0x80; // Sign flag
+        const Z   = 0x40; // Zero flag
+        const Y   = 0x20; // Undocumented flag (bit 5 of result)
+        const H   = 0x10; // Half-carry flag
+        const X   = 0x08; // Undocumented flag (bit 3 of result)
+        const PV  = 0x04; // Parity/Overflow flag
+        const N   = 0x02; // Subtract flag
+        const C   = 0x01; // Carry flag
+    }
+}
+
+impl Flags {
+    fn set_xy_from_result(&mut self, result: u8) {
+        self.set(Flags::X, (result & 0x08) != 0);
+        self.set(Flags::Y, (result & 0x20) != 0);
+    }
+}
 
 #[derive(Clone)]
 pub enum InterruptMode {
@@ -28,7 +41,7 @@ pub enum InterruptMode {
 
 pub struct Z80 {
     pub a: u8,
-    pub f: u8,
+    pub f: Flags,
 
     pub b: u8,
     pub c: u8,
@@ -40,7 +53,7 @@ pub struct Z80 {
     pub l: u8,
 
     pub a_alt: u8,
-    pub f_alt: u8,
+    pub f_alt: Flags,
 
     pub b_alt: u8,
     pub c_alt: u8,
@@ -74,7 +87,7 @@ impl Z80 {
     pub fn new() -> Self {
         Self {
             a: 0xff,
-            f: 0xff,
+            f: Flags::all(),
             b: 0,
             c: 0,
             d: 0,
@@ -82,7 +95,7 @@ impl Z80 {
             h: 0,
             l: 0,
             a_alt: 0xff,
-            f_alt: 0xff,
+            f_alt: Flags::all(),
             b_alt: 0,
             c_alt: 0,
             d_alt: 0,
@@ -193,177 +206,79 @@ impl Z80 {
     }
 
     fn get_af(&self) -> u16 {
-        (self.a as u16) << 8 | self.f as u16
+        (self.a as u16) << 8 | self.f.bits() as u16
     }
     fn set_af(&mut self, val: u16) {
         self.a = (val >> 8) as u8;
-        self.f = val as u8;
+        self.f = Flags::from_bits_truncate(val as u8);
     }
 
     fn parity(v: u8) -> bool {
         v.count_ones() % 2 == 0
     }
 
-    fn set_flag_s(&mut self, val: bool) {
-        if val {
-            self.f |= F_S;
-        } else {
-            self.f &= !F_S;
-        }
-    }
-
-    fn set_flag_z(&mut self, val: bool) {
-        if val {
-            self.f |= F_Z;
-        } else {
-            self.f &= !F_Z;
-        }
-    }
-
-    fn set_flag_y(&mut self, val: bool) {
-        if val {
-            self.f |= F_Y;
-        } else {
-            self.f &= !F_Y;
-        }
-    }
-
-    fn set_flag_x(&mut self, val: bool) {
-        if val {
-            self.f |= F_X;
-        } else {
-            self.f &= !F_X;
-        }
-    }
-
-    fn set_flag_h(&mut self, val: bool) {
-        if val {
-            self.f |= F_H;
-        } else {
-            self.f &= !F_H;
-        }
-    }
-
-    fn set_flags_xy_from_result(&mut self, result: u8) {
-        // xy copies values from bits 3 and 5 of the result
-        self.f = (self.f & !(F_Y | F_X)) | (result & (F_Y | F_X));
-    }
-
-    fn set_flag_pv(&mut self, val: bool) {
-        if val {
-            self.f |= F_PV;
-        } else {
-            self.f &= !F_PV;
-        }
-    }
-
-    fn set_flag_n(&mut self, val: bool) {
-        if val {
-            self.f |= F_N;
-        } else {
-            self.f &= !F_N;
-        }
-    }
-
-    fn set_flag_c(&mut self, val: bool) {
-        if val {
-            self.f |= F_C;
-        } else {
-            self.f &= !F_C;
-        }
-    }
-
-    fn set_all_flags(
-        &mut self,
-        s: bool,
-        z: bool,
-        y: bool,
-        h: bool,
-        x: bool,
-        pv: bool,
-        n: bool,
-        c: bool,
-    ) {
-        self.f = (if s { F_S } else { 0 })
-            | (if z { F_Z } else { 0 })
-            | (if y { F_Y } else { 0 })
-            | (if h { F_H } else { 0 })
-            | (if x { F_X } else { 0 })
-            | (if pv { F_PV } else { 0 })
-            | (if n { F_N } else { 0 })
-            | (if c { F_C } else { 0 });
-    }
-
     fn set_flags_add(&mut self, a: u8, b: u8, result: u16) {
         let res = result as u8;
-        let s = (res & 0x80) != 0;
-        let z = res == 0;
-        let y = (res & 0x20) != 0;
-        let h = ((a ^ b ^ res) & 0x10) != 0;
-        let x = (res & 0x08) != 0;
-        let overflow = ((a ^ res) & (b ^ res) & 0x80) != 0;
-        let n = false;
-        let c = (result & 0x100) != 0;
-        self.set_all_flags(s, z, y, h, x, overflow, n, c);
+        self.f.set(Flags::S, (res & 0x80) != 0);
+        self.f.set(Flags::Z, res == 0);
+        self.f.set(Flags::H, ((a ^ b ^ res) & 0x10) != 0);
+        self.f.set(Flags::PV, res == 0x80);
+        self.f.set(Flags::N, false);
+        self.f.set(Flags::C, (result & 0x100) != 0);
+        self.f.set_xy_from_result(res);
     }
 
     fn set_flags_inc_r8(&mut self, r: u8) {
-        self.set_flag_s((r & 0x80) != 0);
-        self.set_flag_z(r == 0);
-        self.set_flag_y((r & F_Y) != 0);
-        self.set_flag_h((r & 0x0F) == 0x00); // half-carry if lower 4bits changed from 0x0F to 0x00
-        self.set_flag_x((r & F_X) != 0);
-        self.set_flag_pv(r == 0x80);
-        self.set_flag_n(false);
-        // c unchanged
+        self.f.set(Flags::S, (r & 0x80) != 0);
+        self.f.set(Flags::Z, r == 0);
+        self.f.set(Flags::H, (r & 0x0F) == 0x00); // half-carry if lower 4bits changed from 0x0F to 0x00
+        self.f.set(Flags::PV, r == 0x80);
+        self.f.set(Flags::N, false);
+        // C is not affected
+        self.f.set_xy_from_result(r);
     }
 
     fn set_flags_dec_r8(&mut self, r: u8) {
-        self.set_flag_s((r & 0x80) != 0);
-        self.set_flag_z(r == 0);
-        self.set_flag_y((r & F_Y) != 0);
-        self.set_flag_h((r & 0x0F) == 0x0F); // half-carry if lower 4bits changed from 0x00 to 0x0F
-        self.set_flag_x((r & F_X) != 0);
-        self.set_flag_pv(r == 0x7F);
-        self.set_flag_n(true);
-        // c unchanged
+        self.f.set(Flags::S, (r & 0x80) != 0);
+        self.f.set(Flags::Z, r == 0);
+        self.f.set(Flags::H, (r & 0x0F) == 0x0F); // half-carry if lower 4bits changed from 0x00 to 0x0F
+        self.f.set(Flags::PV, r == 0x7F);
+        self.f.set(Flags::N, true);
+        // C is not affected
+        self.f.set_xy_from_result(r);
     }
 
     fn set_flags_sub(&mut self, a: u8, b: u8, result: i16) {
         let res = result as u8;
-        let s = (res & 0x80) != 0;
-        let z = res == 0;
-        let y = (res & 0x20) != 0;
-        let h = ((a ^ b ^ res) & 0x10) != 0;
-        let x = (res & 0x08) != 0;
-        let overflow = ((a ^ b) & (a ^ res)) & 0x80 != 0;
-        let n = true;
-        let c = result < 0;
-        self.set_all_flags(s, z, y, h, x, overflow, n, c);
+        self.f.set(Flags::S, (res & 0x80) != 0);
+        self.f.set(Flags::Z, res == 0);
+        self.f.set(Flags::H, ((a ^ b ^ res) & 0x10) != 0);
+        self.f.set(Flags::PV, ((a ^ b) & (a ^ res)) & 0x80 != 0);
+        self.f.set(Flags::N, true);
+        self.f.set(Flags::C, result < 0);
+        self.f.set_xy_from_result(res);
     }
 
     fn set_flags_rot_shift(&mut self, result: u8, carry: bool) {
-        let s = (result & 0x80) != 0;
-        let z = result == 0;
-        let y = (result & 0x20) != 0;
-        let h = false;
-        let x = (result & 0x08) != 0;
-        let pv = Z80::parity(result);
-        let n = false;
-        let c = carry;
-        self.set_all_flags(s, z, y, h, x, pv, n, c);
+        self.f.set(Flags::S, (result & 0x80) != 0);
+        self.f.set(Flags::Z, result == 0);
+        self.f.set(Flags::H, false);
+        self.f.set(Flags::PV, Z80::parity(result));
+        self.f.set(Flags::N, false);
+        self.f.set(Flags::C, carry);
+        self.f.set_xy_from_result(result);
     }
 
     fn add16(&mut self, a: u16, b: u16) -> u16 {
         let res32 = a as u32 + b as u32;
 
         // flags s, z, pv are unaffected
-        self.set_flag_n(false); // N flag is always reset for ADD
+        self.f.set(Flags::N, false); // N flag is always reset for ADD
                                 // c flag is set if carry from bit 15; otherwise, it is reset.
-        self.set_flag_c((res32 & 0x10000) != 0);
+        self.f.set(Flags::C, (res32 & 0x10000) != 0);
         // h flag is set if carry from bit 11; otherwise, it is reset.
-        self.set_flag_h(((a ^ b ^ res32 as u16) & 0x1000) != 0);
-        self.set_flags_xy_from_result((res32 >> 8) as u8);
+        self.f.set(Flags::H, ((a ^ b ^ res32 as u16) & 0x1000) != 0);
+        self.f.set_xy_from_result((res32 >> 8) as u8);
 
         res32 as u16
     }
@@ -374,13 +289,13 @@ impl Z80 {
         // S is not affected.
         // Z is not affected.
         // H is set if carry from bit 11; otherwise, it is reset.
-        self.set_flag_h(((a ^ b ^ res32 as u16) & 0x1000) != 0);
+        self.f.set(Flags::H, ((a ^ b ^ res32 as u16) & 0x1000) != 0);
         // P/V is not affected
         // N is reset.
-        self.set_flag_n(false);
+        self.f.set(Flags::N, false);
         // C is set if carry from bit 15; otherwise, it is reset.
-        self.set_flag_c((res32 & 0x10000) != 0);
-        self.set_flags_xy_from_result((res32 >> 8) as u8);
+        self.f.set(Flags::C, (res32 & 0x10000) != 0);
+        self.f.set_xy_from_result((res32 >> 8) as u8);
 
         res32 as u16
     }
@@ -398,7 +313,7 @@ impl Z80 {
     }
 
     fn adc8(&mut self, a: u8, b: u8) -> u8 {
-        let carry = (self.f & F_C) != 0;
+        let carry = self.f.contains(Flags::C);
         let carry_u8 = if carry { 1 } else { 0 };
         let result = a as u16 + b as u16 + carry_u8 as u16;
         self.set_flags_add(a, b + carry_u8, result);
@@ -406,7 +321,7 @@ impl Z80 {
     }
 
     fn sbc8(&mut self, a: u8, b: u8) -> u8 {
-        let carry = (self.f & F_C) != 0;
+        let carry = self.f.contains(Flags::C);
         let carry_u8 = if carry { 1 } else { 0 };
         let result = a as i16 - b as i16 - carry_u8 as i16;
         self.set_flags_sub(a, b + carry_u8, result);
@@ -414,92 +329,78 @@ impl Z80 {
     }
 
     fn adc16(&mut self, a: u16, b: u16) -> u16 {
-        let carry = (self.f & F_C) != 0;
+        let carry = self.f.contains(Flags::C);
         let result = a as u32 + b as u32 + carry as u32;
         let res16 = result as u16;
         // S is set if result is negative; otherwise, it is reset.
-        self.set_flag_s((res16 & 0x8000) != 0);
+        self.f.set(Flags::S, (res16 & 0x8000) != 0);
         // Z is set if result is 0; otherwise, it is reset
-        self.set_flag_z(res16 == 0);
+        self.f.set(Flags::Z, res16 == 0);
         // H is set if carry from bit 11 (bit 12 overall)
-        self.set_flag_h((a & 0x0FFF) + (b & 0x0FFF) + (carry as u16) > 0x0FFF);
+        self.f.set(Flags::H, (a & 0x0FFF) + (b & 0x0FFF) + (carry as u16) > 0x0FFF);
         // P/V is set if signed overflow
-        self.set_flag_pv(((a ^ !b) & (a ^ res16) & 0x8000) != 0);
+        self.f.set(Flags::PV, ((a ^ !b) & (a ^ res16) & 0x8000) != 0);
         // N is reset
-        self.set_flag_n(false);
+        self.f.set(Flags::N, false);
         // C is set if carry from bit 15; otherwise, it is reset.
-        self.set_flag_c(result > 0xFFFF);
+        self.f.set(Flags::C, result > 0xFFFF);
         // XY from high byte of result
-        self.set_flags_xy_from_result(((res16 >> 8) & 0xFF) as u8);
+        self.f.set_xy_from_result(((res16 >> 8) & 0xFF) as u8);
         res16
     }
 
     fn sbc16(&mut self, a: u16, b: u16) -> u16 {
-        let carry = (self.f & F_C) != 0;
+        let carry = self.f.contains(Flags::C);
         let result = a as i32 - b as i32 - carry as i32;
         let res16 = (result as u16) & 0xFFFF;
         // S is set if result is negative; otherwise, it is reset.
-        self.set_flag_s((res16 & 0x8000) != 0);
+        self.f.set(Flags::S, (res16 & 0x8000) != 0);
         // Z is set if result is 0; otherwise, it is reset
-        self.set_flag_z(res16 == 0);
+        self.f.set(Flags::Z, res16 == 0);
         // H is set if borrow from bit 12
-        self.set_flag_h((a ^ b ^ (res16)) & 0x1000 != 0);
+        self.f.set(Flags::H, (a ^ b ^ (res16)) & 0x1000 != 0);
         // P/V is set if signed overflow
-        self.set_flag_pv(((a ^ b) & (a ^ res16) & 0x8000) != 0);
+        self.f.set(Flags::PV, ((a ^ b) & (a ^ res16) & 0x8000) != 0);
         // N is set.
-        self.set_flag_n(true);
+        self.f.set(Flags::N, true);
         // C is set if borrow
-        self.set_flag_c(result < 0);
+        self.f.set(Flags::C, result < 0);
         // XY from high byte of result
-        self.set_flags_xy_from_result(((res16 >> 8) & 0xFF) as u8);
+        self.f.set_xy_from_result(((res16 >> 8) & 0xFF) as u8);
         res16
     }
 
     fn set_flags_and(&mut self, result: u8) {
-        self.set_all_flags(
-            (result & 0x80) != 0, // S
-            result == 0,          // Z
-            (result & F_Y) != 0,  // Y
-            true,                 // H
-            (result & F_X) != 0,  // X
-            Self::parity(result), // PV
-            false,                // N
-            false,                // C
-        );
+        self.f.set(Flags::S, (result & 0x80) != 0);
+        self.f.set(Flags::Z, result == 0);
+        self.f.set(Flags::H, true);
+        self.f.set(Flags::PV, Self::parity(result));
+        self.f.set(Flags::N, false);
+        self.f.set(Flags::C, false);
+        self.f.set_xy_from_result(result);
     }
 
     fn set_flags_or_xor(&mut self, result: u8) {
-        self.set_all_flags(
-            (result & 0x80) != 0, // S
-            result == 0,          // Z
-            (result & F_Y) != 0,  // Y
-            false,                // H
-            (result & F_X) != 0,  // X
-            Self::parity(result), // PV
-            false,                // N
-            false,                // C
-        );
+        self.f.set(Flags::S, (result & 0x80) != 0);
+        self.f.set(Flags::Z, result == 0);
+        self.f.set(Flags::H, false);
+        self.f.set(Flags::PV, Self::parity(result));
+        self.f.set(Flags::N, false);
+        self.f.set(Flags::C, false);
+        self.f.set_xy_from_result(result);
     }
 
     fn set_flags_bit(&mut self, val: u8, bit: u8, from_memory: bool) {
         let bit_is_set = (val & (1 << bit)) != 0;
-        let s = bit == 7 && bit_is_set;
-        let z = !bit_is_set;
-        let y = if from_memory {
-            (val & 0x20) != 0
-        } else {
-            false
-        }; // F_Y from bit 5 of value only for memory
-        let h = true;
-        let x = if from_memory {
-            (val & 0x08) != 0
-        } else {
-            false
-        }; // F_X from bit 3 of value only for memory
-        let pv = !bit_is_set;
-        let n = false;
-        let c = (self.f & F_C) != 0; // Preserve carry
-        self.set_all_flags(s, z, y, h, x, pv, n, c);
+        self.f.set(Flags::S, bit == 7 && bit_is_set);
+        self.f.set(Flags::Z, !bit_is_set);
+        self.f.set(Flags::Y, if from_memory { (val & 0x20) != 0 } else { false });
+        self.f.set(Flags::H, true);
+        self.f.set(Flags::X, if from_memory { (val & 0x08) != 0 } else { false });
+        self.f.set(Flags::PV, !bit_is_set);
+        self.f.set(Flags::N, false);
+        // C is not affected
+
     }
 
     pub fn step(&mut self, bus: &mut dyn Bus, debugger: &mut Debugger) -> u32 {
@@ -507,7 +408,7 @@ impl Z80 {
 
         if debugger.enable_disassembler {
             debugger.trace_instruction(
-                bus, current_pc, self.a, self.f, self.b, self.c, self.d, self.e, self.h, self.l,
+                bus, current_pc, self.a, self.f.bits(), self.b, self.c, self.d, self.e, self.h, self.l,
                 self.sp, self.ix, self.iy, self.i, self.r,
             );
         }
@@ -663,10 +564,10 @@ impl Z80 {
                 let old_a = self.a;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
                                                       // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_c((old_a & 0x80) != 0);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, (old_a & 0x80) != 0);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x08 => {
@@ -720,10 +621,10 @@ impl Z80 {
                 let old_a = self.a;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
                                                                // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_c((old_a & 0x01) != 0);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, (old_a & 0x01) != 0);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x10 => {
@@ -782,13 +683,13 @@ impl Z80 {
                 // RLA
                 let old_a = self.a;
                 let carry_out = (old_a & 0x80) != 0; // Carry is old bit 7
-                let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
+                let carry_in = self.f.contains(Flags::C); // Carry is previous C flag
                 self.a = (old_a << 1) | (if carry_in { 1 } else { 0 });
                 // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_c(carry_out);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, carry_out);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x18 => {
@@ -842,19 +743,19 @@ impl Z80 {
                 // RRA
                 let old_a = self.a;
                 let carry_out = (old_a & 0x01) != 0; // Carry is old bit 0
-                let carry_in = (self.f & F_C) != 0; // Carry is previous C flag
+                let carry_in = self.f.contains(Flags::C); // Carry is previous C flag
                 self.a = (old_a >> 1) | (if carry_in { 0x80 } else { 0 });
                 // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_c(carry_out);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, carry_out);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x20 => {
                 // JR NZ, d
                 let d = self.read_byte_pc(bus) as i8;
-                if (self.f & F_Z) == 0 {
+                if !self.f.contains(Flags::Z) {
                     self.pc = self.pc.wrapping_add(d as u16);
                     12
                 } else {
@@ -948,37 +849,37 @@ impl Z80 {
                 */
                 let mut correction: u8 = 0;
                 // Determine upper nibble correction and carry
-                if self.a > 0x99 || (self.f & F_C) != 0 {
+                if self.a > 0x99 || self.f.contains(Flags::C) {
                     correction |= 0x60;
-                    self.set_flag_c(true);
+                    self.f.set(Flags::C, true);
                 } else {
-                    self.set_flag_c(false);
+                    self.f.set(Flags::C, false);
                 }
                 // Determine lower nibble correction
-                if (self.a & 0x0F) > 0x09 || (self.f & F_H) != 0 {
+                if (self.a & 0x0F) > 0x09 || self.f.contains(Flags::H) {
                     correction |= 0x06;
                 }
                 // Add or subtract correction
                 let old_a = self.a;
-                if (self.f & F_N) == 0 {
+                if !self.f.contains(Flags::N) {
                     self.a = self.a.wrapping_add(correction);
                 } else {
                     self.a = self.a.wrapping_sub(correction);
                 }
                 // Set H flag
-                self.set_flag_h(((old_a ^ self.a) & 0x10) != 0);
+                self.f.set(Flags::H, ((old_a ^ self.a) & 0x10) != 0);
                 // Set S,Z,P,5,3 from result
-                self.set_flag_s((self.a & 0x80) != 0);
-                self.set_flag_z(self.a == 0);
-                self.set_flag_pv(Z80::parity(self.a));
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::PV, Z80::parity(self.a));
+                self.f.set_xy_from_result(self.a);
                 // N flag unchanged
                 4
             }
             0x28 => {
                 // JR Z, d
                 let d = self.read_byte_pc(bus) as i8;
-                if (self.f & F_Z) != 0 {
+                if self.f.contains(Flags::Z) {
                     self.pc = self.pc.wrapping_add(d as u16);
                     12
                 } else {
@@ -1031,15 +932,15 @@ impl Z80 {
                 // CPL
                 self.a = !self.a;
                 // flags
-                self.set_flag_h(true);
-                self.set_flag_n(true);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, true);
+                self.f.set(Flags::N, true);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x30 => {
                 // JR NC, d
                 let d = self.read_byte_pc(bus) as i8;
-                if (self.f & F_C) == 0 {
+                if !self.f.contains(Flags::C) {
                     self.pc = self.pc.wrapping_add(d as u16);
                     12
                 } else {
@@ -1096,16 +997,16 @@ impl Z80 {
             0x37 => {
                 // SCF
                 // flags only
-                self.set_flag_c(true);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, true);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x38 => {
                 // JR C, d
                 let d = self.read_byte_pc(bus) as i8;
-                if (self.f & F_C) != 0 {
+                if self.f.contains(Flags::C) {
                     self.pc = self.pc.wrapping_add(d as u16);
                     12
                 } else {
@@ -1156,11 +1057,11 @@ impl Z80 {
             0x3F => {
                 // CCF
                 // flags only. s, z, pv unchanged. H = old C, N = 0, C = !old C. X,Y from new A.
-                let old_carry = (self.f & F_C) != 0;
-                self.set_flag_c(!old_carry);
-                self.set_flag_h(old_carry);
-                self.set_flag_n(false);
-                self.set_flags_xy_from_result(self.a);
+                let old_carry = self.f.contains(Flags::C);
+                self.f.set(Flags::C, !old_carry);
+                self.f.set(Flags::H, old_carry);
+                self.f.set(Flags::N, false);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x40 => {
@@ -1670,7 +1571,12 @@ impl Z80 {
             0x97 => {
                 // SUB A
                 self.a = 0;
-                self.set_all_flags(false, true, false, false, false, false, true, false);
+                self.f.set(Flags::S, false);
+                self.f.set(Flags::Z, true);
+                self.f.set(Flags::PV, false);
+                self.f.set(Flags::N, true);
+                self.f.set(Flags::C, false);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0x98 => {
@@ -1808,7 +1714,12 @@ impl Z80 {
             0xAF => {
                 // XOR A
                 self.a = 0;
-                self.set_all_flags(false, true, false, false, false, true, false, false);
+                self.f.set(Flags::S, false);
+                self.f.set(Flags::Z, true);
+                self.f.set(Flags::PV, true);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::C, false);
+                self.f.set_xy_from_result(self.a);
                 4
             }
             0xB0 => {
@@ -1897,12 +1808,18 @@ impl Z80 {
             }
             0xBF => {
                 // CP A
-                self.set_all_flags(false, true, false, false, false, false, true, false);
+                self.f.set(Flags::S, false);
+                self.f.set(Flags::Z, true);
+                self.f.set(Flags::PV, false);
+                self.f.set(Flags::N, true);
+                self.f.set(Flags::C, false);
+                self.f.set(Flags::X, false);
+                self.f.set(Flags::Y, false);
                 4
             }
             0xC0 => {
                 // RET NZ
-                if (self.f & F_Z) == 0 {
+                if !self.f.contains(Flags::Z) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -1918,7 +1835,7 @@ impl Z80 {
             0xC2 => {
                 // JP NZ, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_Z) == 0 {
+                if !self.f.contains(Flags::Z) {
                     self.pc = nn;
                 }
                 10
@@ -1931,7 +1848,7 @@ impl Z80 {
             0xC4 => {
                 // CALL NZ, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_Z) == 0 {
+                if !self.f.contains(Flags::Z) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -1958,7 +1875,7 @@ impl Z80 {
             }
             0xC8 => {
                 // RET Z
-                if (self.f & F_Z) != 0 {
+                if self.f.contains(Flags::Z) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -1973,7 +1890,7 @@ impl Z80 {
             0xCA => {
                 // JP Z, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_Z) != 0 {
+                if self.f.contains(Flags::Z) {
                     self.pc = nn;
                 }
                 10
@@ -1985,7 +1902,7 @@ impl Z80 {
             0xCC => {
                 // CALL Z, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_Z) != 0 {
+                if self.f.contains(Flags::Z) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2014,7 +1931,7 @@ impl Z80 {
             }
             0xD0 => {
                 // RET NC
-                if (self.f & F_C) == 0 {
+                if !self.f.contains(Flags::C) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2030,7 +1947,7 @@ impl Z80 {
             0xD2 => {
                 // JP NC, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_C) == 0 {
+                if !self.f.contains(Flags::C) {
                     self.pc = nn;
                 }
                 10
@@ -2044,7 +1961,7 @@ impl Z80 {
             0xD4 => {
                 // CALL NC, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_C) == 0 {
+                if !self.f.contains(Flags::C) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2071,7 +1988,7 @@ impl Z80 {
             }
             0xD8 => {
                 // RET C
-                if (self.f & F_C) != 0 {
+                if self.f.contains(Flags::C) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2103,7 +2020,7 @@ impl Z80 {
             0xDA => {
                 // JP C, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_C) != 0 {
+                if self.f.contains(Flags::C) {
                     self.pc = nn;
                 }
                 10
@@ -2117,7 +2034,7 @@ impl Z80 {
             0xDC => {
                 // CALL C, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_C) != 0 {
+                if self.f.contains(Flags::C) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2143,7 +2060,7 @@ impl Z80 {
             }
             0xE0 => {
                 // RET PO
-                if (self.f & F_PV) == 0 {
+                if !self.f.contains(Flags::PV) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2159,7 +2076,7 @@ impl Z80 {
             0xE2 => {
                 // JP PO, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_PV) == 0 {
+                if !self.f.contains(Flags::PV) {
                     self.pc = nn;
                 }
                 10
@@ -2174,7 +2091,7 @@ impl Z80 {
             0xE4 => {
                 // CALL PO, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_PV) == 0 {
+                if !self.f.contains(Flags::PV) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2202,7 +2119,7 @@ impl Z80 {
             }
             0xE8 => {
                 // RET PE
-                if (self.f & F_PV) != 0 {
+                if self.f.contains(Flags::PV) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2217,7 +2134,7 @@ impl Z80 {
             0xEA => {
                 // JP PE, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_PV) != 0 {
+                if self.f.contains(Flags::PV) {
                     self.pc = nn;
                 }
                 10
@@ -2237,7 +2154,7 @@ impl Z80 {
             0xEC => {
                 // CALL PE, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_PV) != 0 {
+                if self.f.contains(Flags::PV) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2264,7 +2181,7 @@ impl Z80 {
             }
             0xF0 => {
                 // RET P
-                if (self.f & F_S) == 0 {
+                if !self.f.contains(Flags::S) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2280,7 +2197,7 @@ impl Z80 {
             0xF2 => {
                 // JP P, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_S) == 0 {
+                if !self.f.contains(Flags::S) {
                     self.pc = nn;
                 }
                 10
@@ -2294,7 +2211,7 @@ impl Z80 {
             0xF4 => {
                 // CALL P, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_S) == 0 {
+                if !self.f.contains(Flags::S) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2322,7 +2239,7 @@ impl Z80 {
             }
             0xF8 => {
                 // RET M
-                if (self.f & F_S) != 0 {
+                if self.f.contains(Flags::S) {
                     self.pc = self.pop(bus);
                     11
                 } else {
@@ -2337,7 +2254,7 @@ impl Z80 {
             0xFA => {
                 // JP M, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_S) != 0 {
+                if self.f.contains(Flags::S) {
                     self.pc = nn;
                 }
                 10
@@ -2350,7 +2267,7 @@ impl Z80 {
             0xFC => {
                 // CALL M, nn
                 let nn = self.read_word_pc(bus);
-                if (self.f & F_S) != 0 {
+                if self.f.contains(Flags::S) {
                     self.push(bus, self.pc);
                     self.pc = nn;
                     17
@@ -2514,7 +2431,7 @@ impl Z80 {
                 // RL B
                 let val = self.b;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2523,7 +2440,7 @@ impl Z80 {
                 // RL C
                 let val = self.c;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2532,7 +2449,7 @@ impl Z80 {
                 // RL D
                 let val = self.d;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2541,7 +2458,7 @@ impl Z80 {
                 // RL E
                 let val = self.e;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2550,7 +2467,7 @@ impl Z80 {
                 // RL H
                 let val = self.h;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2559,7 +2476,7 @@ impl Z80 {
                 // RL L
                 let val = self.l;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2569,7 +2486,7 @@ impl Z80 {
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
                 self.set_flags_rot_shift(new_val, new_carry);
                 15
@@ -2578,7 +2495,7 @@ impl Z80 {
                 // RL A
                 let val = self.a;
                 let new_carry = (val & 0x80) != 0;
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2587,7 +2504,7 @@ impl Z80 {
                 // RR B
                 let val = self.b;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.b = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2596,7 +2513,7 @@ impl Z80 {
                 // RR C
                 let val = self.c;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.c = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2605,7 +2522,7 @@ impl Z80 {
                 // RR D
                 let val = self.d;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.d = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2614,7 +2531,7 @@ impl Z80 {
                 // RR E
                 let val = self.e;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.e = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2623,7 +2540,7 @@ impl Z80 {
                 // RR H
                 let val = self.h;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.h = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2632,7 +2549,7 @@ impl Z80 {
                 // RR L
                 let val = self.l;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.l = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2642,7 +2559,7 @@ impl Z80 {
                 let addr = self.get_hl();
                 let val = bus.read_byte(addr);
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 bus.write_byte(addr, new_val);
                 self.set_flags_rot_shift(new_val, new_carry);
                 15
@@ -2651,7 +2568,7 @@ impl Z80 {
                 // RR A
                 let val = self.a;
                 let new_carry = (val & 0x01) != 0;
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 self.a = new_val;
                 self.set_flags_rot_shift(new_val, new_carry);
                 8
@@ -2990,12 +2907,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.b = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x41 => {
@@ -3023,13 +2940,13 @@ impl Z80 {
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
                 // Set flags: S, Z, H, PV, N, C
-                self.set_flag_z(self.a == 0);
-                self.set_flag_s((self.a & 0x80) != 0);
-                self.set_flag_h((val & 0x0F) != 0); // H if borrow from bit 4 (non-zero lower nibble)
-                self.set_flag_pv(val == 0x80); // P/V if overflow (val was 0x80)
-                self.set_flag_n(true); // N always set
-                self.set_flag_c(val != 0); // C if A was non-zero
-                self.set_flags_xy_from_result(self.a);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::H, (val & 0x0F) != 0); // H if borrow from bit 4 (non-zero lower nibble)
+                self.f.set(Flags::PV, val == 0x80); // P/V if overflow (val was 0x80)
+                self.f.set(Flags::N, true); // N always set
+                self.f.set(Flags::C, val != 0); // C if A was non-zero
+                self.f.set_xy_from_result(self.a);
                 8
             }
             0x45 => {
@@ -3053,12 +2970,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.c = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x49 => {
@@ -3127,12 +3044,12 @@ impl Z80 {
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 })
-                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
-                    | (if Self::parity(self.a) { F_PV } else { 0 })
-                    | F_N
-                    | (if result > 0xFF { F_C } else { 0 })
-                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
+                self.f = (if self.a == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (self.a & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if Self::parity(self.a) { Flags::PV } else { Flags::empty() })
+                    | Flags::N
+                    | (if result > 0xFF { Flags::C } else { Flags::empty() })
+                    | (if (val & 0x0F) != 0 { Flags::H } else { Flags::empty() });
                 8
             }
             0x55 => {
@@ -3149,11 +3066,11 @@ impl Z80 {
             0x57 => {
                 // LD A, I
                 self.a = self.i;
-                self.set_flag_s(self.a & 0x80 != 0);
-                self.set_flag_z(self.a == 0);
-                self.set_flag_pv(self.iff2);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::PV, self.iff2);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
                 9
             }
             0x58 => {
@@ -3161,12 +3078,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.e = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x59 => {
@@ -3194,12 +3111,12 @@ impl Z80 {
                 let val = self.a;
                 let result = 0u16.wrapping_sub(val as u16);
                 self.a = result as u8;
-                self.f = (if self.a == 0 { F_Z } else { 0 })
-                    | (if (self.a & 0x80) != 0 { F_S } else { 0 })
-                    | (if Self::parity(self.a) { F_PV } else { 0 })
-                    | F_N
-                    | (if result > 0xFF { F_C } else { 0 })
-                    | (if (val & 0x0F) != 0 { F_H } else { 0 });
+                self.f = (if self.a == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (self.a & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if Self::parity(self.a) { Flags::PV } else { Flags::empty() })
+                    | Flags::N
+                    | (if result > 0xFF { Flags::C } else { Flags::empty() })
+                    | (if (val & 0x0F) != 0 { Flags::H } else { Flags::empty() });
                 8
             }
             0x5D => {
@@ -3216,11 +3133,11 @@ impl Z80 {
             0x5F => {
                 // LD A, R
                 self.a = self.r;
-                self.set_flag_s(self.a & 0x80 != 0);
-                self.set_flag_z(self.a == 0);
-                self.set_flag_pv(self.iff2);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::PV, self.iff2);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
                 9
             }
             0x60 => {
@@ -3228,12 +3145,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.h = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x61 => {
@@ -3282,13 +3199,13 @@ impl Z80 {
                 self.a = (acc_val & 0xF0) | mem_low;
 
                 // Set flags
-                self.set_flag_s((self.a & 0x80) != 0);
-                self.set_flag_z(self.a == 0);
-                self.set_flag_h(false);
-                self.set_flags_xy_from_result(self.a);
-                self.set_flag_pv(Z80::parity(self.a));
-                self.set_flag_n(false);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::PV, Z80::parity(self.a));
+                self.f.set(Flags::N, false);
                 // C is not affected
+                self.f.set_xy_from_result(self.a);
                 18
             }
             0x68 => {
@@ -3296,12 +3213,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.l = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x69 => {
@@ -3340,13 +3257,14 @@ impl Z80 {
                 self.a = (acc_val & 0xF0) | mem_high;
 
                 // Set flags
-                self.set_flag_s((self.a & 0x80) != 0);
-                self.set_flag_z(self.a == 0);
-                self.set_flag_h(false);
-                self.set_flags_xy_from_result(self.a);
-                self.set_flag_pv(Z80::parity(self.a));
-                self.set_flag_n(false);
+                self.f.set(Flags::S, (self.a & 0x80) != 0);
+                self.f.set(Flags::Z, self.a == 0);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::PV, Z80::parity(self.a));
+                self.f.set(Flags::N, false);
                 // C is not affected
+                self.f.set_xy_from_result(self.a);
+
                 18
             }
             0x70 => {
@@ -3392,12 +3310,12 @@ impl Z80 {
                 let port = self.get_bc();
                 let val = bus.read_port(port);
                 self.a = val;
-                self.f = (self.f & F_C)
-                    | (if (val & 0x80) != 0 { F_S } else { 0 })
-                    | (if val == 0 { F_Z } else { 0 })
-                    | (if (val & 0x20) != 0 { F_Y } else { 0 })
-                    | (if (val & 0x08) != 0 { F_X } else { 0 })
-                    | (if val.count_ones() % 2 == 0 { F_PV } else { 0 });
+                self.f = (self.f & Flags::C)
+                    | (if (val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if val == 0 { Flags::Z } else { Flags::empty() })
+                    | (if (val & 0x20) != 0 { Flags::Y } else { Flags::empty() })
+                    | (if (val & 0x08) != 0 { Flags::X } else { Flags::empty() })
+                    | (if val.count_ones() % 2 == 0 { Flags::PV } else { Flags::empty() });
                 12
             }
             0x79 => {
@@ -3443,13 +3361,16 @@ impl Z80 {
                 self.set_bc(bc);
 
                 // flags
-                let temp = self.a.wrapping_add(val);
-                self.set_flag_y(temp & 0x02 != 0);
-                self.set_flag_x(temp & 0x08 != 0);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_pv(bc != 0);
                 // s, z, c are not affected
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::PV, bc != 0);
+
+                // x.y flags - not as usual.
+                let temp = self.a.wrapping_add(val);
+                self.f.set(Flags::Y, temp & 0x02 != 0);
+                self.f.set(Flags::X, temp & 0x08 != 0);
+
 
                 16
             }
@@ -3465,17 +3386,17 @@ impl Z80 {
                 let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
 
                 // Standard flags
-                self.set_flag_s((result & 0x80) != 0);
-                self.set_flag_z(result == 0);
-                self.set_flag_h(h_flag);
-                self.set_flag_pv(bc != 0);
-                self.set_flag_n(true);
+                self.f.set(Flags::S, (result & 0x80) != 0);
+                self.f.set(Flags::Z, result == 0);
+                self.f.set(Flags::H, h_flag);
+                self.f.set(Flags::PV, bc != 0);
+                self.f.set(Flags::N, true);
                 // C is not affected
 
                 // Undocumented flags
                 let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
-                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
-                self.set_flags_xy_from_result(xy_val);
+                let xy_val = (temp & Flags::X.bits()) | ((temp << 4) & Flags::Y.bits());
+                self.f.set_xy_from_result(xy_val);
 
                 16
             }
@@ -3488,10 +3409,10 @@ impl Z80 {
                 self.set_de(de);
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
-                self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C))
-                    | (if bc != 0 { F_PV } else { 0 })
-                    | (val & (F_Y | F_X));
+                self.f.remove(Flags::H | Flags::N | Flags::PV);
+                self.f = (self.f & (Flags::S | Flags::Z | Flags::C))
+                    | (if bc != 0 { Flags::PV } else { Flags::empty() })
+                    | Flags::from_bits_truncate(val & (Flags::Y | Flags::X).bits());
                 16
             }
             0xA3 => {
@@ -3503,10 +3424,10 @@ impl Z80 {
                 self.set_hl(hl);
                 let bc = self.get_bc().wrapping_sub(1);
                 self.set_bc(bc);
-                self.f &= !(F_H | F_N | F_PV);
-                self.f = (self.f & (F_S | F_Z | F_C))
-                    | (if bc != 0 { F_PV } else { 0 })
-                    | (val & (F_Y | F_X));
+                self.f.remove(Flags::H | Flags::N | Flags::PV);
+                self.f = (self.f & (Flags::S | Flags::Z | Flags::C))
+                    | (if bc != 0 { Flags::PV } else { Flags::empty() })
+                    | Flags::from_bits_truncate(val & (Flags::Y | Flags::X).bits());
                 16
             }
             0xAA => {
@@ -3528,15 +3449,15 @@ impl Z80 {
                 self.set_bc(bc);
 
                 // flags
-                let temp = self.a.wrapping_add(val);
-                self.set_flag_y(temp & 0x02 != 0);
-                self.set_flag_x(temp & 0x08 != 0);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_pv(bc != 0);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::PV, bc != 0);
                 // s, z, c are not affected
-
-                // Undocumented flags
+                // x.y flags - not as usual.
+                let temp = self.a.wrapping_add(val);
+                self.f.set(Flags::Y, temp & 0x02 != 0);
+                self.f.set(Flags::X, temp & 0x08 != 0);
+                
                 16
             }
             0xA9 => {
@@ -3551,17 +3472,17 @@ impl Z80 {
                 let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
 
                 // Standard flags
-                self.set_flag_s((result & 0x80) != 0);
-                self.set_flag_z(result == 0);
-                self.set_flag_h(h_flag);
-                self.set_flag_pv(bc != 0);
-                self.set_flag_n(true);
+                self.f.set(Flags::S, (result & 0x80) != 0);
+                self.f.set(Flags::Z, result == 0);
+                self.f.set(Flags::H, h_flag);
+                self.f.set(Flags::PV, bc != 0);
+                self.f.set(Flags::N, true);
                 // C is not affected
 
                 // Undocumented flags
                 let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
-                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
-                self.set_flags_xy_from_result(xy_val);
+                let xy_val = (temp & Flags::X.bits()) | ((temp << 4) & Flags::Y.bits());
+                self.f.set_xy_from_result(xy_val);
 
                 16
             }
@@ -3576,13 +3497,15 @@ impl Z80 {
                 self.set_bc(bc);
 
                 // flags
-                let temp = self.a.wrapping_add(val);
-                self.set_flag_y(temp & 0x02 != 0);
-                self.set_flag_x(temp & 0x08 != 0);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_pv(bc != 0);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::PV, bc != 0);
                 // s, z, c are not affected
+                // x.y flags - not as usual.
+                let temp = self.a.wrapping_add(val);
+                self.f.set(Flags::Y, temp & 0x02 != 0);
+                self.f.set(Flags::X, temp & 0x08 != 0);
+
 
                 if bc != 0 {
                     self.pc = self.pc.wrapping_sub(2);
@@ -3602,18 +3525,18 @@ impl Z80 {
 
                 let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
 
-                // Standard flags
-                self.set_flag_s((result & 0x80) != 0);
-                self.set_flag_z(result == 0);
-                self.set_flag_h(h_flag);
-                self.set_flag_pv(bc != 0);
-                self.set_flag_n(true);
+                // flags
+                self.f.set(Flags::S, (result & 0x80) != 0);
+                self.f.set(Flags::Z, result == 0);
+                self.f.set(Flags::H, h_flag);
+                self.f.set(Flags::PV, bc != 0);
+                self.f.set(Flags::N, true);
                 // C is not affected
 
                 // Undocumented flags
                 let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
-                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
-                self.set_flags_xy_from_result(xy_val);
+                let xy_val = (temp & Flags::X.bits()) | ((temp << 4) & Flags::Y.bits());
+                self.f.set_xy_from_result(xy_val);
 
                 if bc != 0 && result != 0 {
                     self.pc = self.pc.wrapping_sub(2);
@@ -3641,15 +3564,14 @@ impl Z80 {
                 self.set_bc(bc);
 
                 // flags
-                let temp = self.a.wrapping_add(val);
-                self.set_flag_y(temp & 0x02 != 0);
-                self.set_flag_x(temp & 0x08 != 0);
-                self.set_flag_h(false);
-                self.set_flag_n(false);
-                self.set_flag_pv(bc != 0);
+                self.f.set(Flags::H, false);
+                self.f.set(Flags::N, false);
+                self.f.set(Flags::PV, bc != 0);
                 // s, z, c are not affected
-
-
+                // x.y flags - not as usual.
+                let temp = self.a.wrapping_add(val);
+                self.f.set(Flags::Y, temp & 0x02 != 0);
+                self.f.set(Flags::X, temp & 0x08 != 0);
 
                 if bc != 0 {
                     self.pc = self.pc.wrapping_sub(2);
@@ -3669,18 +3591,17 @@ impl Z80 {
 
                 let h_flag = ((self.a ^ val ^ result) & 0x10) != 0;
 
-                // Standard flags
-                self.set_flag_s((result & 0x80) != 0);
-                self.set_flag_z(result == 0);
-                self.set_flag_h(h_flag);
-                self.set_flag_pv(bc != 0);
-                self.set_flag_n(true);
+                // flags
+                self.f.set(Flags::S, (result & 0x80) != 0);
+                self.f.set(Flags::Z, result == 0);
+                self.f.set(Flags::H, h_flag);
+                self.f.set(Flags::PV, bc != 0);
+                self.f.set(Flags::N, true);
                 // C is not affected
-
                 // Undocumented flags
                 let temp = result.wrapping_sub(if h_flag { 1 } else { 0 });
-                let xy_val = (temp & F_X) | ((temp << 4) & F_Y);
-                self.set_flags_xy_from_result(xy_val);
+                let xy_val = (temp & Flags::X.bits()) | ((temp << 4) & Flags::Y.bits());
+                self.f.set_xy_from_result(xy_val);
 
                 if bc != 0 && result != 0 {
                     self.pc = self.pc.wrapping_sub(2);
@@ -4222,7 +4143,7 @@ impl Z80 {
             }
             0x8C => {
                 // ADC A, IXH (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as u16 + ixh as u16 + carry;
                 self.set_flags_add(self.a, ixh + carry as u8, result);
@@ -4231,7 +4152,7 @@ impl Z80 {
             }
             0x8D => {
                 // ADC A, IXL (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let ixl = self.ix as u8;
                 let result = self.a as u16 + ixl as u16 + carry;
                 self.set_flags_add(self.a, ixl + carry as u8, result);
@@ -4240,7 +4161,7 @@ impl Z80 {
             }
             0x8E => {
                 // ADC A, (IX+d)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -4277,7 +4198,7 @@ impl Z80 {
             }
             0x9C => {
                 // SBC A, IXH (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let ixh = (self.ix >> 8) as u8;
                 let result = self.a as i16 - ixh as i16 - carry;
                 self.set_flags_sub(self.a, ixh + carry as u8, result);
@@ -4286,7 +4207,7 @@ impl Z80 {
             }
             0x9D => {
                 // SBC A, IXL (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let ixl = self.ix as u8;
                 let result = self.a as i16 - ixl as i16 - carry;
                 self.set_flags_sub(self.a, ixl + carry as u8, result);
@@ -4295,7 +4216,7 @@ impl Z80 {
             }
             0x9E => {
                 // SBC A, (IX+d)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.ix.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -4448,16 +4369,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x08 => {
@@ -4469,58 +4391,61 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x10 => {
                 // RL (IX+d),r
                 let r = opcode & 0x07;
                 let val = bus.read_byte(addr);
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x18 => {
                 // RR (IX+d),r
                 let r = opcode & 0x07;
                 let val = bus.read_byte(addr);
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 bus.write_byte(addr, new_val);
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x20 => {
@@ -4532,16 +4457,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x28 => {
@@ -4553,16 +4479,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x30 => {
@@ -4574,16 +4501,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x38 => {
@@ -4595,16 +4523,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
@@ -5192,7 +5121,7 @@ impl Z80 {
             }
             0x8C => {
                 // ADC A, IYH (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as u16 + iyh as u16 + carry;
                 self.set_flags_add(self.a, iyh + carry as u8, result);
@@ -5201,7 +5130,7 @@ impl Z80 {
             }
             0x8D => {
                 // ADC A, IYL (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let iyl = self.iy as u8;
                 let result = self.a as u16 + iyl as u16 + carry;
                 self.set_flags_add(self.a, iyl + carry as u8, result);
@@ -5210,7 +5139,7 @@ impl Z80 {
             }
             0x8E => {
                 // ADC A, (IY+d)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -5247,7 +5176,7 @@ impl Z80 {
             }
             0x9C => {
                 // SBC A, IYH (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let iyh = (self.iy >> 8) as u8;
                 let result = self.a as i16 - iyh as i16 - carry;
                 self.set_flags_sub(self.a, iyh + carry as u8, result);
@@ -5256,7 +5185,7 @@ impl Z80 {
             }
             0x9D => {
                 // SBC A, IYL (undocumented)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let iyl = self.iy as u8;
                 let result = self.a as i16 - iyl as i16 - carry;
                 self.set_flags_sub(self.a, iyl + carry as u8, result);
@@ -5265,7 +5194,7 @@ impl Z80 {
             }
             0x9E => {
                 // SBC A, (IY+d)
-                let carry = if (self.f & F_C) != 0 { 1 } else { 0 };
+                let carry = if self.f.contains(Flags::C) { 1 } else { 0 };
                 let d = self.read_byte_pc(bus) as i8 as i16;
                 let addr = self.iy.wrapping_add(d as u16);
                 let val = bus.read_byte(addr);
@@ -5418,16 +5347,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x08 => {
@@ -5439,58 +5369,61 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x10 => {
                 // RL (IY+d),r
                 let r = opcode & 0x07;
                 let val = bus.read_byte(addr);
-                let new_val = (val << 1) | (if (self.f & F_C) != 0 { 1 } else { 0 });
+                let new_val = (val << 1) | (if self.f.contains(Flags::C) { 1 } else { 0 });
                 bus.write_byte(addr, new_val);
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x18 => {
                 // RR (IY+d),r
                 let r = opcode & 0x07;
                 let val = bus.read_byte(addr);
-                let new_val = (val >> 1) | (if (self.f & F_C) != 0 { 0x80 } else { 0 });
+                let new_val = (val >> 1) | (if self.f.contains(Flags::C) { 0x80 } else { 0 });
                 bus.write_byte(addr, new_val);
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x20 => {
@@ -5502,16 +5435,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x28 => {
@@ -5523,16 +5457,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x30 => {
@@ -5544,16 +5479,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x80) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x80) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             opcode if (opcode & 0xF8) == 0x38 => {
@@ -5565,16 +5501,17 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 { F_S } else { 0 })
-                    | (if new_val == 0 { F_Z } else { 0 })
+                self.f = (if (new_val & 0x80) != 0 { Flags::S } else { Flags::empty() })
+                    | (if new_val == 0 { Flags::Z } else { Flags::empty() })
                     | (if new_val.count_ones() % 2 == 0 {
-                        F_PV
+                        Flags::PV
                     } else {
-                        0
+                        Flags::empty()
                     })
-                    | (if (val & 0x01) != 0 { F_C } else { 0 });
-                self.f = (self.f & !(F_Y | F_X)) | (new_val & (F_Y | F_X));
-                self.f &= !(F_H | F_N);
+                    | (if (val & 0x01) != 0 { Flags::C } else { Flags::empty() });
+                self.f.remove(Flags::Y | Flags::X);
+                self.f.insert(Flags::from_bits_truncate(new_val & (Flags::Y | Flags::X).bits()));
+                self.f.remove(Flags::H | Flags::N);
                 23
             }
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
@@ -5675,7 +5612,7 @@ mod tests {
 
         // check defaults here (found in undocumented documentation)
         assert_eq!(machine.cpu.a, 0xff);
-        assert_eq!(machine.cpu.f, 0xff);
+        assert_eq!(machine.cpu.f.bits(), 0xff);
         assert_eq!(machine.cpu.b, 0);
         assert_eq!(machine.cpu.c, 0);
         assert_eq!(machine.cpu.d, 0);
@@ -5690,7 +5627,7 @@ mod tests {
         assert_eq!(machine.cpu.pc, 1);
         // check that no registers or flags changed
         assert_eq!(machine.cpu.a, 0xff);
-        assert_eq!(machine.cpu.f, 0xff);
+        assert_eq!(machine.cpu.f.bits(), 0xff);
         assert_eq!(machine.cpu.b, 0);
         assert_eq!(machine.cpu.c, 0);
         assert_eq!(machine.cpu.d, 0);
@@ -5705,13 +5642,13 @@ mod tests {
     #[test]
     fn test_01_ld_bc_nn() {
         let mut machine = TestMachine::new(Some(vec![0x01, 0x34, 0x12])); // LD BC, nn
-        machine.cpu.f = 0xFF;
+        machine.cpu.f = Flags::all();
         let cycles = machine.step();
         assert_eq!(machine.cpu.get_bc(), 0x1234);
         assert_eq!(cycles, 10);
         assert_eq!(machine.cpu.pc, 3);
         // check that flags unchanged
-        assert_eq!(machine.cpu.f, 0xFF);
+        assert!(machine.cpu.f.is_all());
     }
 
     #[test]
@@ -5719,43 +5656,44 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x02])); // LD (BC), A
         machine.cpu.a = 0xCD;
         machine.cpu.set_bc(0x1234);
-        machine.cpu.f = 0xFF;
+        machine.cpu.f = Flags::all();
         let cycles = machine.step();
         assert_eq!(machine.ram[0x1234], 0xCD);
         assert_eq!(cycles, 7);
         assert_eq!(machine.cpu.pc, 1);
         // check that flags unchanged
-        assert_eq!(machine.cpu.f, 0xFF);
+        assert!(machine.cpu.f.is_all());
     }
 
     #[test]
     fn test_03_inc_bc() {
         let mut machine = TestMachine::new(Some(vec![0x03])); // INC BC
-        machine.cpu.f = 0xFF;
+        machine.cpu.f = Flags::all();
         machine.cpu.set_bc(0x1234);
         let cycles = machine.step();
         assert_eq!(machine.cpu.get_bc(), 0x1235);
         assert_eq!(cycles, 6);
         assert_eq!(machine.cpu.pc, 1);
         // check that flags unchanged
-        assert_eq!(machine.cpu.f, 0xFF);
+        assert!(machine.cpu.f.is_all());
     }
 
     #[test]
     fn test_04_inc_b() {
         let mut machine = TestMachine::new(Some(vec![0x04])); // INC B
         machine.cpu.b = 5;
-        machine.cpu.f = 0xFF;
+        machine.cpu.f = Flags::all();
         let cycles = machine.step();
         assert_eq!(machine.cpu.b, 6);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
-        assert_eq!(machine.cpu.f & F_C, F_C); // carry unchanged
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
+        assert!(f.contains(Flags::C)); // carry unchanged
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -5763,17 +5701,18 @@ mod tests {
     fn test_05_dec_b() {
         let mut machine = TestMachine::new(Some(vec![0x05])); // DEC B
         machine.cpu.b = 0x10;
-        machine.cpu.f = 0xFF;
+        machine.cpu.f = Flags::all();
         let cycles = machine.step();
         assert_eq!(machine.cpu.b, 0xF);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, F_H); // half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
-        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
-        assert_eq!(machine.cpu.f & F_C, F_C); // carry unchanged
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(f.contains(Flags::H)); // half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(f.contains(Flags::N)); // N set
+        assert!(f.contains(Flags::X)); // bit 3 of result is 1
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
+        assert!(f.contains(Flags::C)); // carry unchanged
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -5785,9 +5724,10 @@ mod tests {
         machine.cpu.set_bc(0x2000);
         let cycles = machine.step();
         assert_eq!(machine.cpu.get_hl(), 0x3000);
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::C)); // no carry
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::N)); // N reset
         assert_eq!(cycles, 11);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -5809,13 +5749,14 @@ mod tests {
         machine.cpu.c = 10;
         let cycles = machine.step();
         assert_eq!(machine.cpu.c, 9);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
-        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(f.contains(Flags::N)); // N set
+        assert!(f.contains(Flags::X)); // bit 3 of result is 1
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -5834,7 +5775,7 @@ mod tests {
     #[test]
     fn test_20_jr_nz() {
         let mut machine = TestMachine::new(Some(vec![0x20, 5])); // JR NZ, n
-        machine.cpu.f = 0; // Z=0
+        machine.cpu.f = Flags::empty();
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 7); // 2 + 5
         assert_eq!(cycles, 12);
@@ -5844,7 +5785,7 @@ mod tests {
     fn test_20_jr_nz_taken() {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
-        machine.cpu.f = 0; // Z flag not set
+        machine.cpu.f = Flags::empty(); // Z flag not set
         machine.ram[0x100] = 0x20; // JR NZ, d
         machine.ram[0x101] = 0x10; // d = 16
         let cycles = machine.step();
@@ -5856,7 +5797,7 @@ mod tests {
     fn test_20_jr_nz_not_taken() {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
-        machine.cpu.f = F_Z; // Z flag set
+        machine.cpu.f = Flags::Z; // Z flag set
         machine.ram[0x100] = 0x20; // JR NZ, d
         machine.ram[0x101] = 0x10; // d = 16
         let cycles = machine.step();
@@ -5877,7 +5818,7 @@ mod tests {
     fn test_28_jr_z_taken() {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
-        machine.cpu.f = F_Z; // Z flag set
+        machine.cpu.f = Flags::Z; // Z flag set
         machine.ram[0x100] = 0x28; // JR Z, d
         machine.ram[0x101] = 0xF0; // d = -16
         let cycles = machine.step();
@@ -5889,7 +5830,7 @@ mod tests {
     fn test_30_jr_nc_taken() {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
-        machine.cpu.f = 0; // C flag not set
+        machine.cpu.f = Flags::empty(); // C flag not set
         machine.ram[0x100] = 0x30; // JR NC, d
         machine.ram[0x101] = 0x05; // d = 5
         let cycles = machine.step();
@@ -5904,11 +5845,12 @@ mod tests {
         machine.ram[0x1000] = 5;
         let cycles = machine.step();
         assert_eq!(machine.ram[0x1000], 6);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z));
+        assert!(!f.contains(Flags::S));
+        assert!(!f.contains(Flags::H));
+        assert!(!f.contains(Flags::PV));
+        assert!(!f.contains(Flags::N));
         assert_eq!(cycles, 11);
     }
 
@@ -5919,27 +5861,29 @@ mod tests {
         machine.ram[0x1000] = 10;
         let cycles = machine.step();
         assert_eq!(machine.ram[0x1000], 9);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z));
+        assert!(!f.contains(Flags::S));
+        assert!(!f.contains(Flags::H));
+        assert!(!f.contains(Flags::PV));
+        assert!(f.contains(Flags::N));
         assert_eq!(cycles, 11);
     }
 
     #[test]
     fn test_37_scf() {
         let mut machine = TestMachine::new(Some(vec![0x37])); // SCF
-        machine.cpu.f = F_S | F_Z | F_PV | F_X | F_Y; // set some flags including X and Y
+        machine.cpu.f = Flags::S | Flags::Z | Flags::PV | Flags::X | Flags::Y; // set some flags including X and Y
         let cycles = machine.step();
-        assert_eq!(machine.cpu.f & F_S, F_S); // preserved
-        assert_eq!(machine.cpu.f & F_Z, F_Z); // preserved
-        assert_eq!(machine.cpu.f & F_PV, F_PV); // preserved
-        assert_eq!(machine.cpu.f & F_X, F_X); // preserved
-        assert_eq!(machine.cpu.f & F_Y, F_Y); // preserved
-        assert_eq!(machine.cpu.f & F_C, F_C); // set
-        assert_eq!(machine.cpu.f & F_H, 0); // reset
-        assert_eq!(machine.cpu.f & F_N, 0); // reset
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S)); // preserved
+        assert!(f.contains(Flags::Z)); // preserved
+        assert!(f.contains(Flags::PV)); // preserved
+        assert!(f.contains(Flags::X)); // preserved
+        assert!(f.contains(Flags::Y)); // preserved
+        assert!(f.contains(Flags::C)); // set
+        assert!(!f.contains(Flags::H)); // reset
+        assert!(!f.contains(Flags::N)); // reset
         assert_eq!(cycles, 4);
     }
 
@@ -5947,7 +5891,7 @@ mod tests {
     fn test_38_jr_c_taken() {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
-        machine.cpu.f = F_C; // C flag set
+        machine.cpu.f = Flags::C; // C flag set
         machine.ram[0x100] = 0x38; // JR C, d
         machine.ram[0x101] = 0xFB; // d = -5
         let cycles = machine.step();
@@ -6124,12 +6068,13 @@ mod tests {
         machine.cpu.b = 3;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 8);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::C)); // no carry
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -6141,14 +6086,15 @@ mod tests {
         machine.cpu.b = 0x01; // 1
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x80); // 128, -128
-        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
-        assert_eq!(machine.cpu.f & F_H, F_H); // half carry
-        assert_eq!(machine.cpu.f & F_PV, F_PV); // overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S)); // sign set
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::C)); // no carry
+        assert!(f.contains(Flags::H)); // half carry
+        assert!(f.contains(Flags::PV)); // overflow
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
         assert_eq!(cycles, 4);
     }
 
@@ -6157,15 +6103,16 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x88])); // ADC A, B
         machine.cpu.a = 0x10;
         machine.cpu.b = 0x20;
-        machine.cpu.f = F_C; // Set carry flag
+        machine.cpu.f = Flags::C; // Set carry flag
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x31); // 0x10 + 0x20 + 1 = 0x31
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::C)); // no carry
         assert_eq!(cycles, 4);
     }
 
@@ -6175,16 +6122,17 @@ mod tests {
         machine.cpu.a = 0x10;
         machine.cpu.h = 0x10;
         machine.cpu.l = 0x00;
-        machine.cpu.f = F_C; // Set carry flag
+        machine.cpu.f = Flags::C; // Set carry flag
         machine.ram[0x1000] = 0x20;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x31); // 0x10 + 0x20 + 1 = 0x31
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::C)); // no carry
         assert_eq!(cycles, 7);
     }
 
@@ -6195,14 +6143,15 @@ mod tests {
         machine.cpu.b = 3;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 7);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(f.contains(Flags::N)); // N set
+        assert!(!f.contains(Flags::C)); // no carry
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -6212,15 +6161,16 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x98])); // SBC A, B
         machine.cpu.a = 0x20;
         machine.cpu.b = 0x10;
-        machine.cpu.f = F_C; // Set carry flag
+        machine.cpu.f = Flags::C; // Set carry flag
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x0F); // 0x20 - 0x10 - 1 = 0x0F
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, F_H); // half carry (borrow from bit 4)
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(f.contains(Flags::H)); // half carry (borrow from bit 4)
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(f.contains(Flags::N)); // N set
+        assert!(!f.contains(Flags::C)); // no carry
         assert_eq!(cycles, 4);
     }
 
@@ -6229,16 +6179,17 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x9E])); // SBC A, (HL)
         machine.cpu.a = 0x20;
         machine.cpu.set_hl(0x1000);
-        machine.cpu.f = F_C; // Set carry flag
+        machine.cpu.f = Flags::C; // Set carry flag
         machine.ram[0x1000] = 0x10;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x0F); // 0x20 - 0x10 - 1 = 0x0F
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // not negative
-        assert_eq!(machine.cpu.f & F_H, F_H); // half carry (borrow from bit 4)
-        assert_eq!(machine.cpu.f & F_PV, 0); // no overflow
-        assert_eq!(machine.cpu.f & F_N, F_N); // N set
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(!f.contains(Flags::S)); // not negative
+        assert!(f.contains(Flags::H)); // half carry (borrow from bit 4)
+        assert!(!f.contains(Flags::PV)); // no overflow
+        assert!(f.contains(Flags::N)); // N set
+        assert!(!f.contains(Flags::C)); // no carry
         assert_eq!(cycles, 7);
     }
 
@@ -6249,12 +6200,13 @@ mod tests {
         machine.cpu.b = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x00); // 0xF0 & 0x0F = 0x00
-        assert_eq!(machine.cpu.f & F_Z, F_Z); // Zero flag set
-        assert_eq!(machine.cpu.f & F_H, F_H); // Half-carry set for AND
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z)); // Zero flag set
+        assert!(f.contains(Flags::H)); // Half-carry set for AND
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
         assert_eq!(cycles, 4);
     }
 
@@ -6266,12 +6218,13 @@ mod tests {
         machine.ram[0x1000] = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x00); // 0xF0 & 0x0F = 0x00
-        assert_eq!(machine.cpu.f & F_Z, F_Z); // Zero flag set
-        assert_eq!(machine.cpu.f & F_H, F_H); // Half-carry set for AND
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, 0); // bit 5 of result is 0
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z)); // Zero flag set
+        assert!(f.contains(Flags::H)); // Half-carry set for AND
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(!f.contains(Flags::Y)); // bit 5 of result is 0
         assert_eq!(cycles, 7);
     }
 
@@ -6282,13 +6235,14 @@ mod tests {
         machine.cpu.d = 0x55;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
-        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
-        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(f.contains(Flags::S)); // sign set
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::C)); // no carry
+        assert!(f.contains(Flags::X)); // bit 3 of result is 1
+        assert!(f.contains(Flags::Y)); // bit 5 of result is 1
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -6301,13 +6255,14 @@ mod tests {
         machine.ram[0x1000] = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xF0); // 0xFF ^ 0x0F = 0xF0
-        assert_eq!(machine.cpu.f & F_Z, 0); // Zero flag not set
-        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
-        assert_eq!(machine.cpu.f & F_H, 0); // Half-carry not set for XOR
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
-        assert_eq!(machine.cpu.f & F_X, 0); // bit 3 of result is 0
-        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // Zero flag not set
+        assert!(f.contains(Flags::S)); // sign set
+        assert!(!f.contains(Flags::H)); // Half-carry not set for XOR
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
+        assert!(!f.contains(Flags::X)); // bit 3 of result is 0
+        assert!(f.contains(Flags::Y)); // bit 5 of result is 1
         assert_eq!(cycles, 7);
     }
 
@@ -6318,10 +6273,11 @@ mod tests {
         machine.cpu.b = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF); // 0xF0 | 0x0F = 0xFF
-        assert_eq!(machine.cpu.f & F_Z, 0); // Zero flag not set
-        assert_eq!(machine.cpu.f & F_H, 0); // Half-carry not set for OR
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // Zero flag not set
+        assert!(!f.contains(Flags::H)); // Half-carry not set for OR
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
         assert_eq!(cycles, 4);
     }
 
@@ -6332,13 +6288,14 @@ mod tests {
         machine.cpu.c = 0xF0;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF);
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
-        assert_eq!(machine.cpu.f & F_S, F_S); // sign set
-        assert_eq!(machine.cpu.f & F_H, 0); // no half carry
-        assert_eq!(machine.cpu.f & F_N, 0); // N reset
-        assert_eq!(machine.cpu.f & F_C, 0); // no carry
-        assert_eq!(machine.cpu.f & F_X, F_X); // bit 3 of result is 1
-        assert_eq!(machine.cpu.f & F_Y, F_Y); // bit 5 of result is 1
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
+        assert!(f.contains(Flags::S)); // sign set
+        assert!(!f.contains(Flags::H)); // no half carry
+        assert!(!f.contains(Flags::N)); // N reset
+        assert!(!f.contains(Flags::C)); // no carry
+        assert!(f.contains(Flags::X)); // bit 3 of result is 1
+        assert!(f.contains(Flags::Y)); // bit 5 of result is 1
         assert_eq!(cycles, 4);
         assert_eq!(machine.cpu.pc, 1);
     }
@@ -6362,11 +6319,12 @@ mod tests {
         machine.ram[0x1000] = 0x10;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x20); // A unchanged
-        assert_eq!(machine.cpu.f & F_Z, 0); // Not zero
-        assert_eq!(machine.cpu.f & F_S, 0); // Not negative
-        assert_eq!(machine.cpu.f & F_H, 0); // No half-carry
-        assert_eq!(machine.cpu.f & F_N, F_N); // Subtract flag set
-        assert_eq!(machine.cpu.f & F_C, 0); // No carry
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // Not zero
+        assert!(!f.contains(Flags::S)); // Not negative
+        assert!(!f.contains(Flags::H)); // No half-carry
+        assert!(f.contains(Flags::N)); // Subtract flag set
+        assert!(!f.contains(Flags::C)); // No carry
         assert_eq!(cycles, 7);
     }
 
@@ -6374,7 +6332,7 @@ mod tests {
     fn test_c0_ret_nz_taken() {
         let mut machine = TestMachine::new(Some(vec![0xC0])); // RET NZ
         machine.cpu.sp = 0x200;
-        machine.cpu.f = 0; // Z flag not set
+        machine.cpu.f = Flags::empty(); // Z flag not set
         machine.ram[0x200] = 0x34; // Return address low
         machine.ram[0x201] = 0x12; // Return address high
         let cycles = machine.step();
@@ -6386,7 +6344,7 @@ mod tests {
     #[test]
     fn test_c2_jp_nz_taken() {
         let mut machine = TestMachine::new(Some(vec![0xC2, 0x34, 0x12])); // JP NZ, nn
-        machine.cpu.f = 0; // Z flag not set
+        machine.cpu.f = Flags::empty(); // Z flag not set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x1234);
         assert_eq!(cycles, 10);
@@ -6405,7 +6363,7 @@ mod tests {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x100;
         machine.cpu.sp = 0x200;
-        machine.cpu.f = 0; // Z flag not set
+        machine.cpu.f = Flags::empty(); // Z flag not set
         machine.ram[0x100] = 0xC4; // CALL NZ, nn
         machine.ram[0x101] = 0x34;
         machine.ram[0x102] = 0x12;
@@ -6433,7 +6391,7 @@ mod tests {
     fn test_c8_ret_z_taken() {
         let mut machine = TestMachine::new(Some(vec![0xC8])); // RET Z
         machine.cpu.sp = 0x300;
-        machine.cpu.f = F_Z; // Z flag set
+        machine.cpu.f = Flags::Z; // Z flag set
         machine.ram[0x300] = 0x78; // Return address low
         machine.ram[0x301] = 0x56; // Return address high
         let cycles = machine.step();
@@ -6457,7 +6415,7 @@ mod tests {
     #[test]
     fn test_ca_jp_z_taken() {
         let mut machine = TestMachine::new(Some(vec![0xCA, 0x78, 0x56])); // JP Z, nn
-        machine.cpu.f = F_Z; // Z flag set
+        machine.cpu.f = Flags::Z; // Z flag set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x5678);
         assert_eq!(cycles, 10);
@@ -6469,7 +6427,8 @@ mod tests {
         machine.cpu.b = 0x85; // 10000101
         let cycles = machine.step();
         assert_eq!(machine.cpu.b, 0x0B); // 00001011, C=1
-        assert_eq!(machine.cpu.f & F_C, F_C);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::C));
         assert_eq!(cycles, 8);
     }
 
@@ -6478,7 +6437,8 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0xCB, 0x40])); // BIT 0, B
         machine.cpu.b = 0x01; // bit 0 set
         let cycles = machine.step();
-        assert_eq!(machine.cpu.f & F_Z, 0); // not zero
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // not zero
         assert_eq!(cycles, 8);
     }
 
@@ -6496,49 +6456,47 @@ mod tests {
         // Test BIT 0, A
         let mut machine = TestMachine::new(Some(vec![0xCB, 0x47])); // BIT 0, A
         machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 0 is 0. Bit 3 is 1. Bit 5 is 1.
-        machine.cpu.f = F_C; // Start with carry set
+        machine.cpu.f = Flags::C; // Start with carry set
 
         machine.step();
         assert_eq!(machine.cpu.pc, 2);
-        assert_eq!((machine.cpu.f & F_S), 0, "S should be 0");
-        assert_ne!((machine.cpu.f & F_Z), 0, "Z should be 1");
-        assert_eq!(
-            (machine.cpu.f & F_Y),
-            0,
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S), "S should be 0");
+        assert!(f.contains(Flags::Z), "Z should be 1");
+        assert!(
+            !f.contains(Flags::Y),
             "Y should be copied from bit 5 of A if bit 5 is checked"
         );
-        assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-        assert_eq!(
-            (machine.cpu.f & F_X),
-            0,
+        assert!(f.contains(Flags::H), "H should be 1");
+        assert!(
+            !f.contains(Flags::X),
             "X should be copied from bit 3 of A if bit 3 is checked"
         );
-        assert_ne!((machine.cpu.f & F_PV), 0, "PV should be 1");
-        assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
-        assert_ne!((machine.cpu.f & F_C), 0, "C should be preserved");
+        assert!(f.contains(Flags::PV), "PV should be 1");
+        assert!(!f.contains(Flags::N), "N should be 0");
+        assert!(f.contains(Flags::C), "C should be preserved");
 
         // Test BIT 7, A
         let mut machine = TestMachine::new(Some(vec![0xCB, 0x7F])); // BIT 7, A
         machine.cpu.a = 0b1101_1010; // A = 0xDA. Bit 7 is 1. Bit 3 is 1. Bit 5 is 1.
-        machine.cpu.f = 0; // Start with carry reset
+        machine.cpu.f = Flags::empty(); // Start with carry reset
         machine.step();
         assert_eq!(machine.cpu.pc, 2);
-        assert_ne!((machine.cpu.f & F_S), 0, "S should be 1");
-        assert_eq!((machine.cpu.f & F_Z), 0, "Z should be 0");
-        assert_eq!(
-            (machine.cpu.f & F_Y),
-            0,
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S), "S should be 1");
+        assert!(!f.contains(Flags::Z), "Z should be 0");
+        assert!(
+            !f.contains(Flags::Y),
             "Y should be copied from bit 5 of A if bit 5 is checked"
         );
-        assert_ne!((machine.cpu.f & F_H), 0, "H should be 1");
-        assert_eq!(
-            (machine.cpu.f & F_X),
-            0,
+        assert!(f.contains(Flags::H), "H should be 1");
+        assert!(
+            !f.contains(Flags::X),
             "X should be copied from bit 3 of A if bit 3 is checked"
         );
-        assert_eq!((machine.cpu.f & F_PV), 0, "PV should be 0");
-        assert_eq!((machine.cpu.f & F_N), 0, "N should be 0");
-        assert_eq!((machine.cpu.f & F_C), 0, "C should be preserved");
+        assert!(!f.contains(Flags::PV), "PV should be 0");
+        assert!(!f.contains(Flags::N), "N should be 0");
+        assert!(!f.contains(Flags::C), "C should be preserved");
     }
 
     #[test]
@@ -6555,7 +6513,7 @@ mod tests {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x200;
         machine.cpu.sp = 0x300;
-        machine.cpu.f = F_Z; // Z flag set
+        machine.cpu.f = Flags::Z; // Z flag set
         machine.ram[0x200] = 0xCC; // CALL Z, nn
         machine.ram[0x201] = 0x78;
         machine.ram[0x202] = 0x56;
@@ -6583,7 +6541,7 @@ mod tests {
     fn test_d0_ret_nc_taken() {
         let mut machine = TestMachine::new(Some(vec![0xD0])); // RET NC
         machine.cpu.sp = 0x250;
-        machine.cpu.f = 0; // C flag not set
+        machine.cpu.f = Flags::empty(); // C flag not set
         machine.ram[0x250] = 0xBC; // Return address low
         machine.ram[0x251] = 0x9A; // Return address high
         let cycles = machine.step();
@@ -6607,7 +6565,7 @@ mod tests {
     #[test]
     fn test_d2_jp_nc_taken() {
         let mut machine = TestMachine::new(Some(vec![0xD2, 0xBC, 0x9A])); // JP NC, nn
-        machine.cpu.f = 0; // C flag not set
+        machine.cpu.f = Flags::empty(); // C flag not set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x9ABC);
         assert_eq!(cycles, 10);
@@ -6628,7 +6586,7 @@ mod tests {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x150;
         machine.cpu.sp = 0x250;
-        machine.cpu.f = 0; // C flag not set
+        machine.cpu.f = Flags::empty(); // C flag not set
         machine.ram[0x150] = 0xD4; // CALL NC, nn
         machine.ram[0x151] = 0xBC;
         machine.ram[0x152] = 0x9A;
@@ -6644,7 +6602,7 @@ mod tests {
     fn test_d8_ret_c_taken() {
         let mut machine = TestMachine::new(Some(vec![0xD8])); // RET C
         machine.cpu.sp = 0x280;
-        machine.cpu.f = F_C; // C flag set
+        machine.cpu.f = Flags::C; // C flag set
         machine.ram[0x280] = 0xEF; // Return address low
         machine.ram[0x281] = 0xCD; // Return address high
         let cycles = machine.step();
@@ -6656,7 +6614,7 @@ mod tests {
     #[test]
     fn test_da_jp_c_taken() {
         let mut machine = TestMachine::new(Some(vec![0xDA, 0xEF, 0xCD])); // JP C, nn
-        machine.cpu.f = F_C; // C flag set
+        machine.cpu.f = Flags::C; // C flag set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0xCDEF);
         assert_eq!(cycles, 10);
@@ -6667,7 +6625,7 @@ mod tests {
         let mut machine = TestMachine::new(None);
         machine.cpu.pc = 0x180;
         machine.cpu.sp = 0x280;
-        machine.cpu.f = F_C; // C flag set
+        machine.cpu.f = Flags::C; // C flag set
         machine.ram[0x180] = 0xDC; // CALL C, nn
         machine.ram[0x181] = 0xEF;
         machine.ram[0x182] = 0xCD;
@@ -6683,7 +6641,7 @@ mod tests {
     fn test_e0_ret_po_taken() {
         let mut machine = TestMachine::new(Some(vec![0xE0])); // RET PO
         machine.cpu.sp = 0x220;
-        machine.cpu.f = 0; // P/V flag not set
+        machine.cpu.f = Flags::empty(); // P/V flag not set
         machine.ram[0x220] = 0x11; // Return address low
         machine.ram[0x221] = 0x22; // Return address high
         let cycles = machine.step();
@@ -6695,7 +6653,7 @@ mod tests {
     #[test]
     fn test_e2_jp_pe_taken() {
         let mut machine = TestMachine::new(Some(vec![0xEA, 0x11, 0x22])); // JP PE, nn
-        machine.cpu.f = F_PV; // P/V flag set
+        machine.cpu.f = Flags::PV; // P/V flag set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x2211);
         assert_eq!(cycles, 10);
@@ -6704,7 +6662,7 @@ mod tests {
     #[test]
     fn test_e2_jp_po_taken() {
         let mut machine = TestMachine::new(Some(vec![0xE2, 0x77, 0x88])); // JP PO, nn
-        machine.cpu.f = 0; // P/V flag not set
+        machine.cpu.f = Flags::empty(); // P/V flag not set
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x8877);
         assert_eq!(cycles, 10);
@@ -6714,7 +6672,7 @@ mod tests {
     fn test_e8_ret_pe_taken() {
         let mut machine = TestMachine::new(Some(vec![0xE8])); // RET PE
         machine.cpu.sp = 0x240;
-        machine.cpu.f = F_PV; // P/V flag set
+        machine.cpu.f = Flags::PV; // P/V flag set
         machine.ram[0x240] = 0x33; // Return address low
         machine.ram[0x241] = 0x44; // Return address high
         let cycles = machine.step();
@@ -6780,7 +6738,7 @@ mod tests {
         machine.cpu.set_de(0x2000);
         machine.cpu.set_bc(2); // bc becomes 1
         machine.ram[0x1000] = 0xAB;
-        machine.cpu.f = F_S | F_Z | F_C; // To check they are preserved
+        machine.cpu.f = Flags::S | Flags::Z | Flags::C; // To check they are preserved
         machine.cpu.a = 0x12;
 
         let cycles = machine.step();
@@ -6791,18 +6749,19 @@ mod tests {
         assert_eq!(cycles, 16);
 
         // Check flags
-        assert_eq!(machine.cpu.f & F_S, F_S, "S should be preserved");
-        assert_eq!(machine.cpu.f & F_Z, F_Z, "Z should be preserved");
-        assert_eq!(machine.cpu.f & F_C, F_C, "C should be preserved");
-        assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
-        assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
-        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S), "S should be preserved");
+        assert!(f.contains(Flags::Z), "Z should be preserved");
+        assert!(f.contains(Flags::C), "C should be preserved");
+        assert!(!f.contains(Flags::H), "H should be reset");
+        assert!(!f.contains(Flags::N), "N should be reset");
+        assert!(f.contains(Flags::PV), "PV should be set");
 
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
         // X flag (bit 3) is 1, Y flag (bit 1) is 0
-        assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
-        assert_eq!(machine.cpu.f & F_Y, 0, "Y should be reset");
+        assert!(f.contains(Flags::X), "X should be set");
+        assert!(!f.contains(Flags::Y), "Y should be reset");
     }
 
     #[test]
@@ -6817,12 +6776,12 @@ mod tests {
         assert_eq!(cycles, 16);
         assert_eq!(machine.cpu.get_hl(), 0x1001);
         assert_eq!(machine.cpu.get_bc(), 1);
-
-        assert_eq!(machine.cpu.f & F_S, 0);
-        assert_eq!(machine.cpu.f & F_Z, 0);
-        assert_eq!(machine.cpu.f & F_H, 0);
-        assert_eq!(machine.cpu.f & F_PV, F_PV);
-        assert_eq!(machine.cpu.f & F_N, F_N);
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S));
+        assert!(!f.contains(Flags::Z));
+        assert!(!f.contains(Flags::H));
+        assert!(f.contains(Flags::PV));
+        assert!(f.contains(Flags::N));
     }
 
     #[test]
@@ -6832,7 +6791,7 @@ mod tests {
         machine.cpu.set_de(0x2001);
         machine.cpu.set_bc(2); // bc becomes 1
         machine.ram[0x1001] = 0xAB;
-        machine.cpu.f = F_S | F_Z | F_C; // To check they are preserved
+        machine.cpu.f = Flags::S | Flags::Z | Flags::C; // To check they are preserved
         machine.cpu.a = 0x12;
 
         let cycles = machine.step();
@@ -6843,18 +6802,19 @@ mod tests {
         assert_eq!(cycles, 16);
 
         // Check flags
-        assert_eq!(machine.cpu.f & F_S, F_S, "S should be preserved");
-        assert_eq!(machine.cpu.f & F_Z, F_Z, "Z should be preserved");
-        assert_eq!(machine.cpu.f & F_C, F_C, "C should be preserved");
-        assert_eq!(machine.cpu.f & F_H, 0, "H should be reset");
-        assert_eq!(machine.cpu.f & F_N, 0, "N should be reset");
-        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV should be set");
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S), "S should be preserved");
+        assert!(f.contains(Flags::Z), "Z should be preserved");
+        assert!(f.contains(Flags::C), "C should be preserved");
+        assert!(!f.contains(Flags::H), "H should be reset");
+        assert!(!f.contains(Flags::N), "N should be reset");
+        assert!(f.contains(Flags::PV), "PV should be set");
 
         // Undocumented flags
         // A(0x12) + val(0xAB) = 0xBD = 10111101
         // X flag (bit 3) is 1, Y flag (bit 1) is 0
-        assert_eq!(machine.cpu.f & F_X, F_X, "X should be set");
-        assert_eq!(machine.cpu.f & F_Y, 0, "Y should be reset");
+        assert!(f.contains(Flags::X), "X should be set");
+        assert!(!f.contains(Flags::Y), "Y should be reset");
     }
 
     #[test]
@@ -6869,12 +6829,12 @@ mod tests {
         assert_eq!(cycles, 16);
         assert_eq!(machine.cpu.get_hl(), 0x0FFF);
         assert_eq!(machine.cpu.get_bc(), 1);
-
-        assert_eq!(machine.cpu.f & F_S, 0);
-        assert_eq!(machine.cpu.f & F_Z, F_Z);
-        assert_eq!(machine.cpu.f & F_H, 0);
-        assert_eq!(machine.cpu.f & F_PV, F_PV);
-        assert_eq!(machine.cpu.f & F_N, F_N);
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S));
+        assert!(f.contains(Flags::Z));
+        assert!(!f.contains(Flags::H));
+        assert!(f.contains(Flags::PV));
+        assert!(f.contains(Flags::N));
     }
 
     #[test]
@@ -6946,7 +6906,8 @@ mod tests {
         assert_eq!(cycles3, 16);
         assert_eq!(machine.cpu.get_bc(), 0);
         assert_eq!(machine.cpu.get_hl(), 0x1003);
-        assert_eq!(machine.cpu.f & F_Z, F_Z);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z));
         assert_eq!(machine.cpu.pc, 2); // finished
     }
 
@@ -7019,7 +6980,8 @@ mod tests {
         assert_eq!(cycles3, 16);
         assert_eq!(machine.cpu.get_bc(), 0);
         assert_eq!(machine.cpu.get_hl(), 0x0FFF);
-        assert_eq!(machine.cpu.f & F_Z, F_Z);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z));
         assert_eq!(machine.cpu.pc, 2); // finished
     }
 
@@ -7027,7 +6989,7 @@ mod tests {
     fn test_f0_ret_p_taken() {
         let mut machine = TestMachine::new(Some(vec![0xF0])); // RET P
         machine.cpu.sp = 0x260;
-        machine.cpu.f = 0; // S flag not set (positive)
+        machine.cpu.f = Flags::empty(); // S flag not set (positive)
         machine.ram[0x260] = 0x55; // Return address low
         machine.ram[0x261] = 0x66; // Return address high
         let cycles = machine.step();
@@ -7039,7 +7001,7 @@ mod tests {
     #[test]
     fn test_f2_jp_p_taken() {
         let mut machine = TestMachine::new(Some(vec![0xF2, 0x55, 0x66])); // JP P, nn
-        machine.cpu.f = 0; // S flag not set (positive)
+        machine.cpu.f = Flags::empty(); // S flag not set (positive)
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x6655);
         assert_eq!(cycles, 10);
@@ -7049,7 +7011,7 @@ mod tests {
     fn test_f8_ret_m_taken() {
         let mut machine = TestMachine::new(Some(vec![0xF8])); // RET M
         machine.cpu.sp = 0x270;
-        machine.cpu.f = F_S; // S flag set (negative)
+        machine.cpu.f = Flags::S; // S flag set (negative)
         machine.ram[0x270] = 0x77; // Return address low
         machine.ram[0x271] = 0x88; // Return address high
         let cycles = machine.step();
@@ -7061,7 +7023,7 @@ mod tests {
     #[test]
     fn test_fa_jp_m_taken() {
         let mut machine = TestMachine::new(Some(vec![0xFA, 0x33, 0x44])); // JP M, nn
-        machine.cpu.f = F_S; // S flag set (negative)
+        machine.cpu.f = Flags::S; // S flag set (negative)
         let cycles = machine.step();
         assert_eq!(machine.cpu.pc, 0x4433);
         assert_eq!(cycles, 10);
@@ -7370,8 +7332,9 @@ mod tests {
         machine.ram[0x1005] = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x00);
-        assert_eq!(machine.cpu.f & F_Z, F_Z);
-        assert_eq!(machine.cpu.f & F_H, F_H);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z));
+        assert!(f.contains(Flags::H));
         assert_eq!(cycles, 19);
     }
 
@@ -7383,7 +7346,8 @@ mod tests {
         machine.ram[0x1005] = 0x0F;
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF);
-        assert_eq!(machine.cpu.f & F_Z, 0);
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z));
         assert_eq!(cycles, 19);
     }
 
@@ -7394,8 +7358,9 @@ mod tests {
         machine.cpu.iy = 0x1000;
         machine.ram[0x1005] = 0x20;
         let cycles = machine.step();
-        assert_eq!(machine.cpu.f & F_S, F_S); // negative result
-        assert_eq!(machine.cpu.f & F_C, F_C); // borrow
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::S)); // negative result
+        assert!(f.contains(Flags::C)); // borrow
         assert_eq!(cycles, 19);
     }
 
@@ -7415,7 +7380,8 @@ mod tests {
         machine.cpu.iy = 0x1000;
         machine.ram[0x1005] = 0x08; // bit 3 set
         let cycles = machine.step();
-        assert_eq!(machine.cpu.f & F_Z, 0);
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z));
         assert_eq!(cycles, 20);
     }
 
@@ -7482,12 +7448,13 @@ mod tests {
         machine.cpu.b = 0x0F; // 00001111
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0x00); // 0xF0 & 0x0F = 0x00
-        assert_eq!(machine.cpu.f & F_Z, F_Z); // Zero flag set
-        assert_eq!(machine.cpu.f & F_H, F_H); // Half-carry set for AND
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
-        assert_eq!(machine.cpu.f & F_X, 0); // Undocumented X flag not set (bit 3 of result is 0)
-        assert_eq!(machine.cpu.f & F_Y, 0); // Undocumented Y flag not set (bit 5 of result is 0)
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::Z)); // Zero flag set
+        assert!(f.contains(Flags::H)); // Half-carry set for AND
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
+        assert!(!f.contains(Flags::X)); // Undocumented X flag not set (bit 3 of result is 0)
+        assert!(!f.contains(Flags::Y)); // Undocumented Y flag not set (bit 5 of result is 0)
         assert_eq!(cycles, 4);
     }
 
@@ -7498,13 +7465,14 @@ mod tests {
         machine.cpu.d = 0x55; // 01010101
         let cycles = machine.step();
         assert_eq!(machine.cpu.a, 0xFF); // 0xAA ^ 0x55 = 0xFF
-        assert_eq!(machine.cpu.f & F_Z, 0); // Not zero
-        assert_eq!(machine.cpu.f & F_S, F_S); // Sign set (bit 7 = 1)
-        assert_eq!(machine.cpu.f & F_H, 0); // Half-carry not set for XOR
-        assert_eq!(machine.cpu.f & F_N, 0); // Subtract flag not set
-        assert_eq!(machine.cpu.f & F_C, 0); // Carry flag not set
-        assert_eq!(machine.cpu.f & F_X, F_X); // Undocumented X flag set (bit 3 of result is 1)
-        assert_eq!(machine.cpu.f & F_Y, F_Y); // Undocumented Y flag set (bit 5 of result is 1)
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::Z)); // Not zero
+        assert!(f.contains(Flags::S)); // Sign set (bit 7 = 1)
+        assert!(!f.contains(Flags::H)); // Half-carry not set for XOR
+        assert!(!f.contains(Flags::N)); // Subtract flag not set
+        assert!(!f.contains(Flags::C)); // Carry flag not set
+        assert!(f.contains(Flags::X)); // Undocumented X flag set (bit 3 of result is 1)
+        assert!(f.contains(Flags::Y)); // Undocumented Y flag set (bit 5 of result is 1)
         assert_eq!(cycles, 4);
     }
 
@@ -7513,74 +7481,81 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0xED, 0x42])); // SBC HL, BC
         machine.cpu.set_hl(0x8000);
         machine.cpu.set_bc(0x0001);
-        machine.cpu.f = 0; // No carry
+        machine.cpu.f = Flags::empty(); // No carry
         machine.step();
         assert_eq!(machine.cpu.get_hl(), 0x7FFF);
-        assert_eq!(machine.cpu.f & F_S, 0, "S flag incorrect");
-        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag incorrect");
-        assert_eq!(machine.cpu.f & F_H, F_H, "H flag incorrect");
-        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag incorrect"); // 0x8000 - 0x0001 = 0x7fff, overflow
-        assert_eq!(machine.cpu.f & F_N, F_N, "N flag incorrect");
-        assert_eq!(machine.cpu.f & F_C, 0, "C flag incorrect");
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S), "S flag incorrect");
+        assert!(!f.contains(Flags::Z), "Z flag incorrect");
+        assert!(f.contains(Flags::H), "H flag incorrect");
+        assert!(f.contains(Flags::PV), "PV flag incorrect"); // 0x8000 - 0x0001 = 0x7fff, overflow
+        assert!(f.contains(Flags::N), "N flag incorrect");
+        assert!(!f.contains(Flags::C), "C flag incorrect");
     }
 
     #[test]
     fn test_adc16_basic() {
         let mut cpu = Z80::new();
-        cpu.f = 0; // No carry
+        cpu.f = Flags::empty(); // No carry
         let res = cpu.adc16(0x1234, 0x1111);
         assert_eq!(res, 0x2345);
-        assert_eq!(cpu.f & F_C, 0);
-        assert_eq!(cpu.f & F_H, 0);
-        assert_eq!(cpu.f & F_N, 0);
+        let f = &cpu.f;
+        assert!(!f.contains(Flags::C));
+        assert!(!f.contains(Flags::H));
+        assert!(!f.contains(Flags::N));
     }
 
     #[test]
     fn test_adc16_with_carry() {
         let mut cpu = Z80::new();
-        cpu.f = F_C; // Carry set
+        cpu.f = Flags::C; // Carry set
         let res = cpu.adc16(0xFFFF, 0x0001);
         assert_eq!(res, 0x0001);
-        assert_eq!(cpu.f & F_C, F_C);
-        assert_eq!(cpu.f & F_Z, 0);
+        let f = &cpu.f;
+        assert!(f.contains(Flags::C));
+        assert!(!f.contains(Flags::Z));
     }
 
     #[test]
     fn test_adc16_zero() {
         let mut cpu = Z80::new();
-        cpu.f = 0;
+        cpu.f = Flags::empty();
         let res = cpu.adc16(0, 0);
         assert_eq!(res, 0);
-        assert_eq!(cpu.f & F_Z, F_Z);
+        let f = &cpu.f;
+        assert!(f.contains(Flags::Z));
     }
 
     #[test]
     fn test_sbc16_basic() {
         let mut cpu = Z80::new();
-        cpu.f = 0; // No carry
+        cpu.f = Flags::empty(); // No carry
         let res = cpu.sbc16(0x2345, 0x1234);
         assert_eq!(res, 0x1111);
-        assert_eq!(cpu.f & F_C, 0);
-        assert_eq!(cpu.f & F_N, F_N);
+        let f = &cpu.f;
+        assert!(!f.contains(Flags::C));
+        assert!(f.contains(Flags::N));
     }
 
     #[test]
     fn test_sbc16_with_borrow() {
         let mut cpu = Z80::new();
-        cpu.f = F_C; // Carry set
+        cpu.f = Flags::C; // Carry set
         let res = cpu.sbc16(0x0000, 0x0001);
         assert_eq!(res, 0xFFFE);
-        assert_eq!(cpu.f & F_C, F_C);
-        assert_eq!(cpu.f & F_S, F_S);
+        let f = &cpu.f;
+        assert!(f.contains(Flags::C));
+        assert!(f.contains(Flags::S));
     }
 
     #[test]
     fn test_sbc16_zero() {
         let mut cpu = Z80::new();
-        cpu.f = 0;
+        cpu.f = Flags::empty();
         let res = cpu.sbc16(0, 0);
         assert_eq!(res, 0);
-        assert_eq!(cpu.f & F_Z, F_Z);
+        let f = &cpu.f;
+        assert!(f.contains(Flags::Z));
     }
 
     #[test]
@@ -7599,14 +7574,15 @@ mod tests {
             machine.cpu.a
         );
         println!("Flags after DAA (add): {:08b}", machine.cpu.f);
-        assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_H, 0, "H flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_N, 0, "N flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_C, 0, "C flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_X, 0x08, "X flag after DAA (add)");
-        assert_eq!(machine.cpu.f & F_Y, 0x00, "Y flag after DAA (add)");
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S), "S flag after DAA (add)");
+        assert!(!f.contains(Flags::Z), "Z flag after DAA (add)");
+        assert!(!f.contains(Flags::H), "H flag after DAA (add)");
+        assert!(f.contains(Flags::PV), "PV flag after DAA (add)");
+        assert!(!f.contains(Flags::N), "N flag after DAA (add)");
+        assert!(!f.contains(Flags::C), "C flag after DAA (add)");
+        assert!(f.contains(Flags::X), "X flag after DAA (add)");
+        assert!(!f.contains(Flags::Y), "Y flag after DAA (add)");
         // Test DAA after subtraction
         let mut machine = TestMachine::new(Some(vec![0x3E, 0x15, 0xD6, 0x06, 0x27])); // LD A,0x15; SUB 0x06; DAA
         machine.step(); // LD A,0x15
@@ -7618,14 +7594,15 @@ mod tests {
             "A after DAA (sub) was {:02X}",
             machine.cpu.a
         );
-        assert_eq!(machine.cpu.f & F_S, 0, "S flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_Z, 0, "Z flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_H, 0, "H flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_PV, F_PV, "PV flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_N, F_N, "N flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_C, 0, "C flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_X, 0x08, "X flag after DAA (sub)");
-        assert_eq!(machine.cpu.f & F_Y, 0x00, "Y flag after DAA (sub)");
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::S), "S flag after DAA (sub)");
+        assert!(!f.contains(Flags::Z), "Z flag after DAA (sub)");
+        assert!(!f.contains(Flags::H), "H flag after DAA (sub)");
+        assert!(f.contains(Flags::PV), "PV flag after DAA (sub)");
+        assert!(f.contains(Flags::N), "N flag after DAA (sub)");
+        assert!(!f.contains(Flags::C), "C flag after DAA (sub)");
+        assert!(f.contains(Flags::X), "X flag after DAA (sub)");
+        assert!(!f.contains(Flags::Y), "Y flag after DAA (sub)");
     }
 
     #[test]
@@ -7634,10 +7611,11 @@ mod tests {
         machine.step();
         machine.step();
         assert_eq!(machine.cpu.a, 0xAA);
-        assert_eq!(machine.cpu.f & F_H, F_H);
-        assert_eq!(machine.cpu.f & F_N, F_N);
-        assert_eq!(machine.cpu.f & F_X, 0x08);
-        assert_eq!(machine.cpu.f & F_Y, 0x20);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::H));
+        assert!(f.contains(Flags::N));
+        assert!(f.contains(Flags::X));
+        assert!(f.contains(Flags::Y));
     }
 
     #[test]
@@ -7645,11 +7623,12 @@ mod tests {
         let mut machine = TestMachine::new(Some(vec![0x3E, 0xFF, 0x37])); // LD A,0xFF; SCF
         machine.step();
         machine.step();
-        assert_eq!(machine.cpu.f & F_C, F_C);
-        assert_eq!(machine.cpu.f & F_H, 0);
-        assert_eq!(machine.cpu.f & F_N, 0);
-        assert_eq!(machine.cpu.f & F_X, 0x08);
-        assert_eq!(machine.cpu.f & F_Y, 0x20);
+        let f = &machine.cpu.f;
+        assert!(f.contains(Flags::C));
+        assert!(!f.contains(Flags::H));
+        assert!(!f.contains(Flags::N));
+        assert!(f.contains(Flags::X));
+        assert!(f.contains(Flags::Y));
     }
 
     #[test]
@@ -7658,10 +7637,11 @@ mod tests {
         machine.step();
         machine.step();
         machine.step();
-        assert_eq!(machine.cpu.f & F_C, 0);
-        assert_eq!(machine.cpu.f & F_H, F_H);
-        assert_eq!(machine.cpu.f & F_N, 0);
-        assert_eq!(machine.cpu.f & F_X, 0);
-        assert_eq!(machine.cpu.f & F_Y, 0);
+        let f = &machine.cpu.f;
+        assert!(!f.contains(Flags::C));
+        assert!(f.contains(Flags::H));
+        assert!(!f.contains(Flags::N));
+        assert!(!f.contains(Flags::X));
+        assert!(!f.contains(Flags::Y));
     }
 }
