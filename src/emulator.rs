@@ -297,7 +297,7 @@ impl MachineZxSpectrum48 {
     pub fn new_with_options(
         enable_disassembler: bool,
         enable_trace_interrupts: bool,
-        rom_filename: String,
+        rom_filename: std::path::PathBuf,
         run_zexall: bool,
     ) -> Self {
         let mut machine = Self {
@@ -323,7 +323,7 @@ impl MachineZxSpectrum48 {
         machine
     }
 
-    pub fn load_rom(&mut self, rom_filename: &str, run_zexall: bool) {
+    pub fn load_rom(&mut self, rom_filename: &std::path::PathBuf, run_zexall: bool) {
         if run_zexall {
             self.load_zexall_test(rom_filename);
         } else {
@@ -331,15 +331,15 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    fn load_standard_rom(&mut self, rom_filename: &str) {
+    fn load_standard_rom(&mut self, rom_filename: &std::path::PathBuf) {
         if let Ok(rom) = std::fs::read(rom_filename) {
             if rom.len() == 0x4000 {
                 self.rom.copy_from_slice(&rom);
-                println!("Loaded ROM from {}", rom_filename);
+                println!("Loaded ROM from {}", rom_filename.display());
             } else {
                 println!(
                     "Warning: {} has incorrect size ({} bytes). Expected 16384 bytes.",
-                    rom_filename,
+                    rom_filename.display(),
                     rom.len()
                 );
                 self.load_fallback_program();
@@ -347,17 +347,17 @@ impl MachineZxSpectrum48 {
         } else {
             println!(
                 "Error: Could not load ROM from {}. Using fallback program.",
-                rom_filename
+                rom_filename.display()
             );
             self.load_fallback_program();
         }
     }
 
-    fn load_zexall_test(&mut self, rom_name: &str) {
+    fn load_zexall_test(&mut self, rom_name: &std::path::PathBuf) {
         let load_addr = 0x0100;
         if let Ok(rom) = std::fs::read(rom_name) {
             self.rom[load_addr..load_addr + rom.len()].copy_from_slice(&rom);
-            println!("Loaded ZEXALL/ZEXDOC test ROM from {}", rom_name);
+            println!("Loaded ZEXALL/ZEXDOC test ROM from {}", rom_name.display());
 
             // Patch address 5 to add RET instruction to avoid hanging
             self.rom[5] = 0xC9; // RET
@@ -374,7 +374,7 @@ impl MachineZxSpectrum48 {
         } else {
             println!(
                 "Error: Could not load ZEXALL/ZEXDOC test ROM from {}. Using fallback program.",
-                rom_name
+                rom_name.display()
             );
             self.load_fallback_program();
         }

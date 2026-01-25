@@ -8,68 +8,65 @@ use emulator::{Key, MachineZxSpectrum48};
 use screen::draw_screen;
 use std::collections::VecDeque;
 
+use clap::Parser;
+
+/// ZX Spectrum Emulator
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Enable instruction disassembly tracing
+    #[arg(long, default_value_t = false)]
+    disasm: bool,
+
+    /// Enable interrupt tracing
+    #[arg(long, default_value_t = false)]
+    trace_int: bool,
+
+    /// Load specified ROM file
+    #[arg(long, default_value = "roms/48.rom")]
+    rom: std::path::PathBuf,
+
+    /// Run ZEXALL instruction set exerciser test
+    #[arg(long, default_value_t = false)]
+    run_zexall: bool,
+
+    /// Run ZEXDOC instruction set exerciser test
+    #[arg(long, default_value_t = false)]
+    run_zexdoc: bool,
+
+    /// Disable frame rate limiting for maximum speed
+    #[arg(long, default_value_t = false)]
+    max_speed: bool,
+
+    /// Display current FPS in the top-left corner
+    #[arg(long, default_value_t = false)]
+    show_fps: bool,
+
+    /// Run in headless mode for maximum performance (e.g., for tests)
+    #[arg(long, default_value_t = false)]
+    no_ui: bool,
+}
+
 fn main() -> Result<(), eframe::Error> {
     // Parse command line arguments
-    let args: Vec<String> = std::env::args().collect();
-
-    // Check for help flag
-    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        println!("ZX Spectrum Emulator");
-        println!("Usage: {} [OPTIONS]", args[0]);
-        println!();
-        println!("Options:");
-        println!("  --disasm          Enable instruction disassembly tracing");
-        println!("  --trace-int       Enable interrupt tracing");
-        println!("  --rom=<file>      Load specified ROM file (default: roms/48.rom)");
-        println!("  --run-zexall      Run ZEXALL instruction set exerciser test");
-        println!("  --run-zexdoc      Run ZEXDOC instruction set exerciser test");
-        println!("  --max-speed       Disable frame rate limiting for maximum speed");
-        println!("  --show-fps        Display current FPS in the top-left corner");
-        println!(
-            "  --no-ui           Run in headless mode for maximum performance (e.g., for tests)"
-        );
-        println!("  --help, -h        Show this help message");
-        println!();
-        println!("Examples:");
-        println!("  {}                Run emulator normally", args[0]);
-        println!("  {} --disasm       Run with disassembly tracing", args[0]);
-        println!("  {} --trace-int    Run with interrupt tracing", args[0]);
-        println!("  {} --rom=roms/Robik48.rom  Load alternative ROM", args[0]);
-        println!("  {} --run-zexall   Run ZEXALL test", args[0]);
-        println!("  {} --run-zexdoc   Run ZEXDOC test", args[0]);
-        println!("  {} --max-speed    Run at maximum speed", args[0]);
-        println!("  {} --show-fps     Show FPS counter", args[0]);
-        std::process::exit(0);
-    }
-
-    let enable_disassembler = args.contains(&"--disasm".to_string());
-    let enable_trace_interrupts = args.contains(&"--trace-int".to_string());
-    let run_zexall = args.contains(&"--run-zexall".to_string());
-    let run_zexdoc = args.contains(&"--run-zexdoc".to_string());
-    let max_speed = args.contains(&"--max-speed".to_string());
-    let show_fps = args.contains(&"--show-fps".to_string());
-    let no_ui = args.contains(&"--no-ui".to_string());
+    let args = Args::parse();
 
     // Parse ROM filename
-    let mut rom_filename = "roms/48.rom".to_string();
-    if run_zexall {
-        rom_filename = "roms/zexall-0x0100.rom".to_string();
-    } else if run_zexdoc {
-        rom_filename = "roms/zexdoc-0x0100.rom".to_string();
+    let rom_filename: std::path::PathBuf;
+    if args.run_zexall {
+        rom_filename = "roms/zexall-0x0100.rom".into();
+    } else if args.run_zexdoc {
+        rom_filename = "roms/zexdoc-0x0100.rom".into();
+    } else {
+        rom_filename = args.rom;
     }
 
-    for arg in &args {
-        if arg.starts_with("--rom=") {
-            rom_filename = arg[6..].to_string();
-        }
-    }
-
-    if no_ui {
+    if args.no_ui {
         let mut emulator = MachineZxSpectrum48::new_with_options(
-            enable_disassembler,
-            enable_trace_interrupts,
+            args.disasm,
+            args.trace_int,
             rom_filename,
-            run_zexall || run_zexdoc,
+            args.run_zexall || args.run_zexdoc,
         );
         loop {
             emulator.run_until_frame_without_ula();
@@ -81,12 +78,12 @@ fn main() -> Result<(), eframe::Error> {
             options,
             Box::new(move |_cc| {
                 Box::new(MyApp::new(
-                    enable_disassembler,
-                    enable_trace_interrupts,
+                    args.disasm,
+                    args.trace_int,
                     rom_filename,
-                    run_zexall || run_zexdoc,
-                    max_speed,
-                    show_fps,
+                    args.run_zexall || args.run_zexdoc,
+                    args.max_speed,
+                    args.show_fps,
                 ))
             }),
         )
@@ -167,7 +164,7 @@ impl MyApp {
     fn new(
         enable_disassembler: bool,
         enable_trace_interrupts: bool,
-        rom_filename: String,
+        rom_filename: std::path::PathBuf,
         run_zexall: bool,
         max_speed: bool,
         show_fps: bool,
@@ -193,7 +190,7 @@ impl MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false, false, "roms/48.rom".to_string(), false, false, false)
+        Self::new(false, false, "roms/48.rom".into(), false, false, false)
     }
 }
 

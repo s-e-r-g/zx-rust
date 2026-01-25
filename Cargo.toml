@@ -9,3 +9,4 @@ egui = "0.27"
 log = "0.4"
 env_logger = "0.10"
 bitflags = "2.4"
+clap = { version = "4.5.54", features = ["derive"] }
