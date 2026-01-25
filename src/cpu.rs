@@ -717,11 +717,11 @@ impl Z80 {
                 let carry_out = (old_a & 0x80) != 0; // Carry is old bit 7
                 let carry_in = self.f.contains(Flags::C); // Carry is previous C flag
                 self.a = (old_a << 1) | (if carry_in { 1 } else { 0 });
-                // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
+                // flags s, z, pv unchanged.
                 self.f.set(Flags::C, carry_out);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(self.a);
+
                 4
             }
             0x18 => {
@@ -777,11 +777,11 @@ impl Z80 {
                 let carry_out = (old_a & 0x01) != 0; // Carry is old bit 0
                 let carry_in = self.f.contains(Flags::C); // Carry is previous C flag
                 self.a = (old_a >> 1) | (if carry_in { 0x80 } else { 0 });
-                // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
+                // flags s, z, pv unchanged.
                 self.f.set(Flags::C, carry_out);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(self.a);
+
                 4
             }
             0x20 => {
@@ -1029,9 +1029,8 @@ impl Z80 {
             0x37 => {
                 // SCF
                 // flags only
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
                 self.f.set(Flags::C, true);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(self.a);
                 4
             }
@@ -1088,11 +1087,11 @@ impl Z80 {
             }
             0x3F => {
                 // CCF
-                // flags only. s, z, pv unchanged. H = old C, N = 0, C = !old C. X,Y from new A.
+                // flags only. s, z, pv unchanged.
                 let old_carry = self.f.contains(Flags::C);
                 self.f.set(Flags::C, !old_carry);
                 self.f.set(Flags::H, old_carry);
-                self.f.set(Flags::N, false);
+                self.f.remove(Flags::N);
                 self.f.set_xy_from_result(self.a);
                 4
             }
@@ -3724,10 +3723,9 @@ impl Z80 {
                 self.set_bc(bc);
 
                 // flags
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
-                self.f.set(Flags::PV, bc != 0);
                 // s, z, c are not affected
+                self.f.set(Flags::PV, bc != 0);
+                self.f.remove(Flags::H | Flags::N);
                 // x.y flags - not as usual.
                 let temp = self.a.wrapping_add(val);
                 self.f.set(Flags::Y, temp & 0x02 != 0);
@@ -4554,7 +4552,7 @@ impl Z80 {
                 self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(new_val);
-                
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x10 => {
