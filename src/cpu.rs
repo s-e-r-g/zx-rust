@@ -593,10 +593,10 @@ impl Z80 {
                 // RLCA
                 let old_a = self.a;
                 self.a = (old_a << 1) | (old_a >> 7); // Bit 7 moves to bit 0
-                                                      // flags s, z, pv unchanged. H=0, N=0. C = old bit 7. X,Y from new A.
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
+
+                // flags
                 self.f.set(Flags::C, (old_a & 0x80) != 0);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(self.a);
                 4
             }
@@ -644,17 +644,19 @@ impl Z80 {
                 // LD C, n
                 self.c = self.read_byte_pc(bus);
                 // flags unchanged
+
                 7
             }
             0x0F => {
                 // RRCA
                 let old_a = self.a;
                 self.a = (old_a >> 1) | ((old_a & 0x01) << 7); // Bit 0 moves to bit 7
-                                                               // flags s, z, pv unchanged. H=0, N=0. C = old bit 0. X,Y from new A.
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
+
+                // flags s, z, pv unchanged.
                 self.f.set(Flags::C, (old_a & 0x01) != 0);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(self.a);
+
                 4
             }
             0x10 => {
@@ -4527,13 +4529,12 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-
+                // flags
                 self.f.set(Flags::S, (new_val & 0x80) != 0);
-                self.f.set(Flags::H, false);
-                self.f.set(Flags::N, false);
                 self.f.set(Flags::Z, new_val == 0);
                 self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
                 self.f.set(Flags::C, (val & 0x80) != 0);
+                self.f.remove(Flags::H | Flags::N);
                 self.f.set_xy_from_result(new_val);
                 23
             }
@@ -4546,28 +4547,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+                
                 23
             }
             opcode if (opcode & 0xF8) == 0x10 => {
@@ -4579,28 +4566,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x18 => {
@@ -4612,28 +4585,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x20 => {
@@ -4645,28 +4604,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x28 => {
@@ -4678,28 +4623,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x30 => {
@@ -4711,28 +4642,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x38 => {
@@ -4744,28 +4661,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
@@ -5579,28 +5482,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x08 => {
@@ -5612,28 +5501,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x10 => {
@@ -5645,28 +5520,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x18 => {
@@ -5678,28 +5539,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x20 => {
@@ -5711,28 +5558,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x28 => {
@@ -5744,28 +5577,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x30 => {
@@ -5777,28 +5596,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x80) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x80) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             opcode if (opcode & 0xF8) == 0x38 => {
@@ -5810,28 +5615,14 @@ impl Z80 {
                 if r != 6 {
                     self.set_reg(r, new_val);
                 }
-                self.f = (if (new_val & 0x80) != 0 {
-                    Flags::S
-                } else {
-                    Flags::empty()
-                }) | (if new_val == 0 {
-                    Flags::Z
-                } else {
-                    Flags::empty()
-                }) | (if new_val.count_ones() % 2 == 0 {
-                    Flags::PV
-                } else {
-                    Flags::empty()
-                }) | (if (val & 0x01) != 0 {
-                    Flags::C
-                } else {
-                    Flags::empty()
-                });
-                self.f.remove(Flags::Y | Flags::X);
-                self.f.insert(Flags::from_bits_truncate(
-                    new_val & (Flags::Y | Flags::X).bits(),
-                ));
+                // flags
+                self.f.set(Flags::S, (new_val & 0x80) != 0);
+                self.f.set(Flags::Z, new_val == 0);
+                self.f.set(Flags::PV, new_val.count_ones() % 2 == 0);
+                self.f.set(Flags::C, (val & 0x01) != 0);
                 self.f.remove(Flags::H | Flags::N);
+                self.f.set_xy_from_result(new_val);
+
                 23
             }
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
