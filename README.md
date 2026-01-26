@@ -1,17 +1,23 @@
 Draft of ZX Spectrum emulator on Rust.
 ======================================
 
-TODO:
+# TODO:
 
 * implement missing commands
 * add tests
 * check flags correctness
+* implement correct ULA timings.
 
-
-Testing CPU status (ZEXALL):
-============================
+# Run emulator
 ```
-$ cargo run --release -- --run-zexall --no-ui
+$ cargo run
+```
+
+
+# Testing CPU status (ZEXALL):
+
+```
+$ cargo zexall
 ```
 
 ```
