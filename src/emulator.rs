@@ -114,6 +114,14 @@ impl Ula {
         }
     }
 
+    fn is_end_of_frame(&self) -> bool {
+        self.h_counter == 0 && self.v_counter == 0
+    }
+
+    fn get_ticks_per_frame(&self) -> usize {
+        FULL_WIDTH * FULL_HEIGHT
+    }
+
     fn in_visible_area(&self) -> bool {
         self.h_counter >= BORDER_H
             && self.h_counter < BORDER_H + SCREEN_WIDTH
@@ -158,12 +166,11 @@ pub struct MachineZxSpectrum48 {
     ram: [u8; 0xC000], // 48KB RAM
     rom: [u8; 0x4000], // 16KB ROM
     cpu: crate::cpu::Z80,
-    t_states: u32,
-    frame_ready: bool,
     pub screen_buffer: Vec<u8>,
     keyboard: [u8; 8],
     debugger: crate::debugger::Debugger,
-    states_per_frame: u32,
+    statest_per_second: u64,
+    last_run_time: std::time::Instant,
 }
 
 impl Memory for MachineZxSpectrum48 {
@@ -305,8 +312,6 @@ impl MachineZxSpectrum48 {
             ram: [0; 0xC000],
             rom: [0; 0x4000],
             cpu: crate::cpu::Z80::new(),
-            t_states: 0,
-            frame_ready: false,
             screen_buffer: vec![0; FULL_WIDTH * FULL_HEIGHT * 4],
             keyboard: [0xFF; 8],
             debugger: crate::debugger::Debugger::new(
@@ -314,7 +319,8 @@ impl MachineZxSpectrum48 {
                 enable_trace_interrupts,
                 run_zexall,
             ),
-            states_per_frame: 69888,
+            statest_per_second: 3500000,
+            last_run_time: std::time::Instant::now(),
         };
         machine.load_rom(&rom_filename, run_zexall);
         // machine.load_test_image("test.tap").unwrap_or_else(|e| {
@@ -506,47 +512,48 @@ impl MachineZxSpectrum48 {
     }
 
     pub fn run_until_frame_without_ula(&mut self) {
-        self.frame_ready = false;
-        while !self.frame_ready {
+        let mut states: usize = 0;
+
+        while states < self.ula.get_ticks_per_frame() {
             // Execute one CPU instruction
             let t_states = unsafe {
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
                 self.cpu.step(bus, &mut self.debugger)
             };
 
-            self.t_states += t_states;
-
-            for _ in 0..(self.t_states / self.states_per_frame) {
-                self.frame_ready = true;
-                self.cpu.raise_int();
-            }
-
-            self.t_states %= self.states_per_frame;
+            states += t_states as usize;
         }
+
+        self.cpu.raise_int();
     }
 
-    pub fn run_until_frame(&mut self) {
-        self.frame_ready = false;
+    // Run the emulator until the specified target time.
+    // Returns the number of frames rendered during this period.
+    pub fn run_until_time(&mut self, target_time: std::time::Instant) -> u32 {
+        let duration = target_time.duration_since(self.last_run_time);
+        let target_states = (duration.as_secs_f64() * self.statest_per_second as f64) as u64;
+        let mut executed_states: u64 = 0;
+        let mut frames_rendered: u32 = 0;
 
-        while !self.frame_ready {
-            // Execute one CPU instruction
+        while executed_states < target_states {
             let t_states = unsafe {
                 let bus = &mut *(self as *mut MachineZxSpectrum48 as *mut dyn Bus);
 
                 self.cpu.step(bus, &mut self.debugger)
             };
+            executed_states += t_states as u64;
+
             for _ in 0..t_states {
                 let memory = unsafe { &*(self as *const MachineZxSpectrum48 as *const dyn Memory) };
                 self.ula.tick(memory);
-                self.t_states += 1;
-
-                if self.t_states == 69888 {
-                    self.t_states = 0;
-                    self.frame_ready = true;
+                if self.ula.is_end_of_frame() {
                     self.cpu.raise_int();
                     self.screen_buffer.copy_from_slice(&self.ula.framebuffer);
+                    frames_rendered += 1;
                 }
             }
         }
+        self.last_run_time = self.last_run_time + std::time::Duration::from_nanos((executed_states as f64 / self.statest_per_second as f64 * 1e9) as u64);
+        frames_rendered
     }
 }

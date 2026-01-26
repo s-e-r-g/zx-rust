@@ -34,10 +34,6 @@ struct Args {
     #[arg(long, default_value_t = false)]
     run_zexdoc: bool,
 
-    /// Disable frame rate limiting for maximum speed
-    #[arg(long, default_value_t = false)]
-    max_speed: bool,
-
     /// Display current FPS in the top-left corner
     #[arg(long, default_value_t = false)]
     show_fps: bool,
@@ -82,7 +78,6 @@ fn main() -> Result<(), eframe::Error> {
                     args.trace_int,
                     rom_filename,
                     args.run_zexall || args.run_zexdoc,
-                    args.max_speed,
                     args.show_fps,
                 ))
             }),
@@ -93,7 +88,6 @@ fn main() -> Result<(), eframe::Error> {
 struct MyApp {
     emulator: MachineZxSpectrum48,
     last_frame_generation_start_time: std::time::Instant,
-    max_speed: bool,
     show_fps: bool,
     frame_times: std::collections::VecDeque<std::time::Instant>,
     emulated_frames_this_second: u32,
@@ -166,7 +160,6 @@ impl MyApp {
         enable_trace_interrupts: bool,
         rom_filename: std::path::PathBuf,
         run_zexall: bool,
-        max_speed: bool,
         show_fps: bool,
     ) -> Self {
         let now = std::time::Instant::now();
@@ -178,7 +171,6 @@ impl MyApp {
                 run_zexall,
             ),
             last_frame_generation_start_time: now,
-            max_speed,
             show_fps,
             frame_times: VecDeque::new(),
             emulated_frames_this_second: 0,
@@ -190,7 +182,7 @@ impl MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false, false, "roms/48.rom".into(), false, false, false)
+        Self::new(false, false, "roms/48.rom".into(), false, false)
     }
 }
 
@@ -198,24 +190,9 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
         let now = std::time::Instant::now();
-        let time_since_last = now.duration_since(self.last_frame_generation_start_time);
-        if self.max_speed {
-            self.last_frame_generation_start_time = now;
-            // Number of frames to run, to run at 2x speed
-            let mut frames_to_run = (time_since_last.as_secs_f64() * 50.0 * 2.0).ceil() as u32;
-            if frames_to_run == 0 {
-                frames_to_run = 1;
-            }
-            for _ in 0..frames_to_run {
-                self.emulator.run_until_frame();
-                self.emulated_frames_this_second += 1;
-            }
-        } else if time_since_last.as_millis() >= 20 {
-            // ~50Hz (20ms)
-            self.last_frame_generation_start_time = now;
-            self.emulator.run_until_frame();
-            self.emulated_frames_this_second += 1;
-        }
+
+        self.last_frame_generation_start_time = now;
+        self.emulated_frames_this_second += self.emulator.run_until_time(now);
 
         CentralPanel::default().show(ctx, |ui| {
             draw_screen(
