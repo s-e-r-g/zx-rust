@@ -60,6 +60,15 @@ pub enum Key {
 pub trait Memory {
     fn read_byte(&self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, val: u8);
+    fn read_word(&self, addr: u16) -> u16 {
+        let lo = self.read_byte(addr);
+        let hi = self.read_byte(addr.wrapping_add(1));
+        u16::from_le_bytes([lo, hi])
+    }
+    fn write_word(&mut self, addr: u16, val: u16) {
+        self.write_byte(addr, (val & 0xFF) as u8);
+        self.write_byte(addr.wrapping_add(1), (val >> 8) as u8);
+    }
 }
 
 pub trait Ports {
@@ -306,6 +315,7 @@ impl MachineZxSpectrum48 {
         enable_trace_interrupts: bool,
         rom_filename: std::path::PathBuf,
         run_zexall: bool,
+        tap_filename: Option<std::path::PathBuf>,
     ) -> Self {
         let mut machine = Self {
             ula: Ula::new(),
@@ -323,9 +333,11 @@ impl MachineZxSpectrum48 {
             last_run_time: std::time::Instant::now(),
         };
         machine.load_rom(&rom_filename, run_zexall);
-        // machine.load_test_image("test.tap").unwrap_or_else(|e| {
-        //     println!("Error loading test.tap: {}", e);
-        // }   );
+        if let Some(filename) = tap_filename {
+            machine.load_tap(&filename).unwrap_or_else(|e| {
+                println!("Error loading tap file: {}", e);
+            });
+        }
         machine
     }
 
@@ -403,14 +415,22 @@ impl MachineZxSpectrum48 {
         }
     }
 
-    pub fn load_test_image(&mut self, filename: &str) -> Result<(), String> {
+    pub fn load_tap(&mut self, filename: &std::path::PathBuf) -> Result<(), String> {
         let tap_bytes = match std::fs::read(filename) {
             Ok(bytes) => bytes,
-            Err(e) => return Err(format!("Could not read file {}: {}", filename, e)),
+            Err(e) => return Err(format!("Could not read file {}: {}", filename.display(), e)),
         };
 
+        struct TapHeaderInfo {
+            block_type: u8,
+            start_address: u16, // start address for CODE, autostart line for BASIC
+            data_len: u16,
+        }
+
+        let mut last_header: Option<TapHeaderInfo> = None;
+        let mut entry_point: Option<u16> = None;
+
         let mut i = 0;
-        // First pass: look for a standard CODE block with a header
         while i < tap_bytes.len() {
             if i + 2 > tap_bytes.len() {
                 break;
@@ -424,91 +444,81 @@ impl MachineZxSpectrum48 {
             let block = &tap_bytes[i..i + block_len];
             i += block_len;
 
-            if block_len > 18 && block[0] == 0x00 && block[1] == 3 {
-                // Header, Type 3: Code
-                let data_len_in_header = u16::from_le_bytes([block[12], block[13]]);
-                let start_address = u16::from_le_bytes([block[14], block[15]]);
+            let flag = block[0];
+            if flag == 0x00 {
+                // Header
+                let block_type = block[1];
+                let data_len = u16::from_le_bytes([block[12], block[13]]);
+                let param1 = u16::from_le_bytes([block[14], block[15]]); // start addr or line num
 
-                if i >= tap_bytes.len() {
-                    continue;
-                }
-
-                if i + 2 > tap_bytes.len() {
-                    break;
-                }
-                let data_block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
-
-                if i + 2 + data_block_len > tap_bytes.len() {
-                    break;
-                }
-                let data_block = &tap_bytes[i + 2..i + 2 + data_block_len];
-
-                if !data_block.is_empty() && data_block[0] == 0xFF {
-                    let code_data = &data_block[1..data_block.len() - 1];
-                    if code_data.len() != data_len_in_header as usize {
-                        println!("Warning: TAP block header length ({}) differs from actual data length ({}).", data_len_in_header, code_data.len());
+                last_header = Some(TapHeaderInfo {
+                    block_type,
+                    start_address: param1,
+                    data_len,
+                });
+            } else if flag == 0xFF {
+                // Data
+                let data = &block[1..block.len() - 1]; // -1 for checksum at the end
+                if let Some(header) = last_header.take() {
+                    if data.len() as u16 != header.data_len {
+                        println!(
+                            "Warning: TAP block header length ({}) differs from actual data length ({}).",
+                            header.data_len,
+                            data.len()
+                        );
                     }
-
-                    println!(
-                        "Loading {} bytes to 0x{:04X}",
-                        code_data.len(),
-                        start_address
-                    );
-                    for (offset, byte) in code_data.iter().enumerate() {
-                        self.write_byte(start_address + offset as u16, *byte);
+                    match header.block_type {
+                        0 => {
+                            // BASIC
+                            println!("Loading BASIC program ({} bytes)", data.len());
+                            // PROG sysvar at 0x5CCB
+                            let prog_start = self.read_word(0x5CCB);
+                            for (offset, byte) in data.iter().enumerate() {
+                                self.write_byte(prog_start + offset as u16, *byte);
+                            }
+                            // Update VARS to point after program
+                            let vars_addr = prog_start + data.len() as u16;
+                            self.write_word(0x5CC8, vars_addr);
+                        }
+                        3 => {
+                            // CODE
+                            println!(
+                                "Loading CODE block ({} bytes) at 0x{:04X}",
+                                data.len(),
+                                header.start_address
+                            );
+                            for (offset, byte) in data.iter().enumerate() {
+                                self.write_byte(header.start_address + offset as u16, *byte);
+                            }
+                            entry_point = Some(header.start_address);
+                        }
+                        _ => {
+                            // Other known types would go here. For now, just print.
+                            println!("Skipping data for unknown block type {}", header.block_type);
+                        }
                     }
-
-                    let di_halt = [0xF3, 0x76];
-                    self.write_byte(0x5B00, di_halt[0]);
-                    self.write_byte(0x5B01, di_halt[1]);
-                    self.cpu.pc = 0x5B00;
-                    self.cpu.iff1 = false;
-                    self.cpu.iff2 = false;
-                    self.cpu.halted = false;
-
-                    return Ok(());
+                } else {
+                    // Headerless data block
+                    if data.len() == 6912 {
+                        println!("Loading screen data (6912 bytes) to 0x4000");
+                        for (offset, byte) in data.iter().enumerate() {
+                            self.write_byte(0x4000 + offset as u16, *byte);
+                        }
+                    } else {
+                        println!("Skipping headerless data block of size {}", data.len());
+                    }
                 }
             }
         }
 
-        // Second pass: if no code block was found, look for a raw screen dump
-        i = 0;
-        while i < tap_bytes.len() {
-            if i + 2 > tap_bytes.len() {
-                break;
-            }
-            let block_len = u16::from_le_bytes([tap_bytes[i], tap_bytes[i + 1]]) as usize;
-            i += 2;
-
-            if i + block_len > tap_bytes.len() {
-                break;
-            }
-            let block = &tap_bytes[i..i + block_len];
-            i += block_len;
-
-            if block_len > 2 && block[0] == 0xFF {
-                // Data block
-                let data = &block[1..block.len() - 1];
-                if data.len() == 6912 {
-                    println!("Detected screen data (6912 bytes). Loading to 0x4000.");
-                    for (offset, byte) in data.iter().enumerate() {
-                        self.write_byte(0x4000 + offset as u16, *byte);
-                    }
-
-                    let di_halt = [0xF3, 0x76];
-                    self.write_byte(0x5B00, di_halt[0]);
-                    self.write_byte(0x5B01, di_halt[1]);
-                    self.cpu.pc = 0x5B00;
-                    self.cpu.iff1 = false;
-                    self.cpu.iff2 = false;
-                    self.cpu.halted = false;
-
-                    return Ok(());
-                }
-            }
+        if let Some(pc) = entry_point {
+            self.cpu.pc = pc;
+            self.cpu.iff1 = false;
+            self.cpu.iff2 = false;
+            self.cpu.halted = false;
         }
 
-        Err("No CODE or 6912-byte data block found in tap file.".to_string())
+        Ok(())
     }
 
     pub fn run_until_frame_without_ula(&mut self) {

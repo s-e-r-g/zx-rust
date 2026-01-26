@@ -26,6 +26,10 @@ struct Args {
     #[arg(long, default_value = "roms/48.rom")]
     rom: std::path::PathBuf,
 
+    /// Load specified tap file
+    #[arg(long)]
+    tap: Option<std::path::PathBuf>,
+
     /// Run ZEXALL instruction set exerciser test
     #[arg(long, default_value_t = false)]
     run_zexall: bool,
@@ -63,6 +67,7 @@ fn main() -> Result<(), eframe::Error> {
             args.trace_int,
             rom_filename,
             args.run_zexall || args.run_zexdoc,
+            args.tap,
         );
         loop {
             emulator.run_until_frame_without_ula();
@@ -79,6 +84,7 @@ fn main() -> Result<(), eframe::Error> {
                     rom_filename,
                     args.run_zexall || args.run_zexdoc,
                     args.show_fps,
+                    args.tap,
                 ))
             }),
         )
@@ -161,6 +167,7 @@ impl MyApp {
         rom_filename: std::path::PathBuf,
         run_zexall: bool,
         show_fps: bool,
+        tap_filename: Option<std::path::PathBuf>,
     ) -> Self {
         let now = std::time::Instant::now();
         Self {
@@ -169,6 +176,7 @@ impl MyApp {
                 enable_trace_interrupts,
                 rom_filename,
                 run_zexall,
+                tap_filename,
             ),
             last_frame_generation_start_time: now,
             show_fps,
@@ -182,7 +190,7 @@ impl MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self::new(false, false, "roms/48.rom".into(), false, false)
+        Self::new(false, false, "roms/48.rom".into(), false, false, None)
     }
 }
 
