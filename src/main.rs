@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use clap::Parser;
 
 /// ZX Spectrum Emulator
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Enable instruction disassembly tracing
@@ -197,8 +197,8 @@ impl Default for MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
-        let now = std::time::Instant::now();
 
+        let now = std::time::Instant::now();
         self.last_frame_generation_start_time = now;
         self.emulated_frames_this_second += self.emulator.run_until_time(now);
 

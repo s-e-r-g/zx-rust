@@ -36,7 +36,7 @@ const PALETTE: [[u8; 4]; 16] = [
     [0xFF, 0xFF, 0xFF, 0xFF], // 15: Bright White
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 #[rustfmt::skip]
 pub enum Key {
     // Row 0

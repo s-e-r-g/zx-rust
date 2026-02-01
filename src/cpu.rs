@@ -12,7 +12,7 @@ use crate::debugger::Debugger;
 use crate::emulator::{Bus, Memory};
 
 bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy)]
     pub struct Flags: u8 {
         const S   = 0x80; // Sign flag
         const Z   = 0x40; // Zero flag
@@ -32,7 +32,7 @@ impl Flags {
     }
 }
 
-#[derive(Clone)]
+
 pub enum InterruptMode {
     IM0,
     IM1,
